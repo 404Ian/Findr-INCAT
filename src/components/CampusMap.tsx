@@ -11,7 +11,6 @@ import L from "leaflet";
 import { CAMPUS_CENTER, CAMPUS_HUBS } from "../data/hubs";
 import type { WallPost } from "../types";
 
-// Custom SVG Radar Pin Generator
 function createRadarPin(color: string, pulse = false) {
     return L.divIcon({
         className: "custom-radar-pin",
@@ -71,7 +70,7 @@ interface CampusMapProps {
 
 export const CampusMap: React.FC<CampusMapProps> = ({
     center = CAMPUS_CENTER,
-    zoom = 17,
+    zoom = 18,
     posts = [],
     selectedPin,
     interactivePicker = false,
@@ -90,15 +89,16 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 className="w-full h-full z-0"
             >
                 <TileLayer
-                    attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    maxZoom={19}
                 />
                 <MapRecenter center={center} />
                 {interactivePicker && (
                     <MapClickHandler onSelectCoords={onSelectCoords} />
                 )}
 
-                {/* Official Drop-off Hubs */}
+                {/* Official INCAT Drop-off Hubs */}
                 {CAMPUS_HUBS.filter((h) => h.isOfficialDropoff).map((hub) => (
                     <Marker
                         key={hub.name}
@@ -108,7 +108,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                         <Popup>
                             <div className="text-xs space-y-1">
                                 <div className="font-mono-tabular text-[10px] text-blue-400 uppercase font-semibold">
-                                    Official Drop-Off Hub • {hub.buildingCode}
+                                    INCAT Official Hub • {hub.buildingCode}
                                 </div>
                                 <div className="font-bold text-white text-sm">
                                     {hub.name}
@@ -139,7 +139,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                             )}
                         >
                             <Popup>
-                                <div className="text-xs space-y-1.5 min-w-45">
+                                <div className="text-xs space-y-1.5 min-w-[180px]">
                                     <span
                                         className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono-tabular font-semibold uppercase ${
                                             post.post_type === "lost"
@@ -159,7 +159,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                                     {onSelectPost && (
                                         <button
                                             onClick={() => onSelectPost(post)}
-                                            className="mt-1 w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-1 px-2 rounded text-[11px] transition"
+                                            className="mt-1 w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-1 px-2 rounded text-[11px] transition cursor-pointer"
                                         >
                                             Inspect Post Details
                                         </button>
@@ -190,8 +190,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 )}
             </MapContainer>
 
-            {/* Floating Radar Legend Overlay */}
-            <div className="absolute bottom-2.5 left-2.5 z-400 radar-glass px-2.5 py-1.5 rounded-lg flex flex-wrap items-center gap-3 text-[11px] text-slate-300 pointer-events-none">
+            {/* Floating INCAT Radar Legend Overlay */}
+            <div className="absolute bottom-2.5 left-2.5 z-10 radar-glass px-2.5 py-1.5 rounded-lg flex flex-wrap items-center gap-3 text-[11px] text-slate-300 pointer-events-none">
                 <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-radar-lost inline-block"></span>
                     Lost Alert
@@ -202,11 +202,11 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-radar-blue inline-block"></span>
-                    Official Office Hub
+                    INCAT Drop-off Office
                 </span>
                 {interactivePicker && (
                     <span className="text-blue-400 font-mono-tabular">
-                        Click anywhere on map to move pin
+                        Click anywhere on INCAT map to move pin
                     </span>
                 )}
             </div>

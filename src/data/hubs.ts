@@ -10,95 +10,99 @@ export interface CampusHubPreset {
     handoverInstructions: string;
 }
 
-export const CAMPUS_CENTER: [number, number] = [14.6538, 121.0685];
+// Exact Coordinates for Ilocos Norte College of Arts and Trades (P. Gomez St., Brgy. 5, Laoag City)
+export const CAMPUS_CENTER: [number, number] = [18.20419, 120.59265];
 
 export const CAMPUS_HUBS: CampusHubPreset[] = [
     {
         name: "Main Gate / Guard House",
-        shortLabel: "Guard House",
-        buildingCode: "GATE-01",
-        lat: 14.6529,
-        lng: 121.0672,
+        shortLabel: "INCAT Main Gate",
+        buildingCode: "INCAT-GATE",
+        lat: 18.20382,
+        lng: 120.59285,
         isOfficialDropoff: true,
         handoverInstructions:
-            "Logbook desk at Main Entrance Security Guard House (Open 24/7). Bring School ID.",
+            "INCAT Main Gate Guard House & RFID Turnstile Desk along P. Gomez St. (Logbook available).",
     },
     {
         name: "Guidance Office",
         shortLabel: "Guidance Office",
-        buildingCode: "ADM-102",
-        lat: 14.6541,
-        lng: 121.0681,
+        buildingCode: "INCAT-GUID",
+        lat: 18.20415,
+        lng: 120.59255,
         isOfficialDropoff: true,
         handoverInstructions:
-            "Ground Floor, Admin Bldg Room 102. Claim between 7:30 AM – 4:30 PM.",
+            "INCAT Guidance & Counseling Office. Claim between 7:30 AM – 4:30 PM with your INCAT ID.",
     },
     {
         name: "SSG / Student Council Office",
-        shortLabel: "SSG Office",
-        buildingCode: "STU-204",
-        lat: 14.6545,
-        lng: 121.0689,
+        shortLabel: "SSLG Office",
+        buildingCode: "INCAT-SSLG",
+        lat: 18.20432,
+        lng: 120.59272,
         isOfficialDropoff: true,
         handoverInstructions:
-            "Student Center 2nd Floor, SSG Officer-on-Duty Desk.",
+            "INCAT Supreme Secondary Learner Government (SSLG) Office — Officer-on-Duty Desk.",
     },
     {
         name: "Principal's Office",
         shortLabel: "Principal's Office",
-        buildingCode: "ADM-201",
-        lat: 14.6542,
-        lng: 121.0683,
+        buildingCode: "INCAT-ADMIN",
+        lat: 18.20408,
+        lng: 120.59262,
         isOfficialDropoff: true,
         handoverInstructions:
-            "High-value items vault at Reception Desk, 2nd Floor Admin Building.",
+            "INCAT Admin Building — Principal’s Office Reception Desk (for high-value gadgets & wallets).",
     },
     {
         name: "Canteen",
-        shortLabel: "Campus Canteen",
-        buildingCode: "CNT-01",
-        lat: 14.6535,
-        lng: 121.0691,
+        shortLabel: "INCAT Canteen",
+        buildingCode: "INCAT-COOP",
+        lat: 18.20428,
+        lng: 120.59242,
         isOfficialDropoff: false,
-        handoverInstructions: "Near main dining tables / Cashier Counter #1.",
+        handoverInstructions:
+            "INCAT Multi-Purpose Cooperative Canteen Counter #1.",
     },
     {
         name: "Library",
-        shortLabel: "Main Library",
-        buildingCode: "LIB-300",
-        lat: 14.6548,
-        lng: 121.0684,
+        shortLabel: "Social Hall & Library",
+        buildingCode: "INCAT-LIB",
+        lat: 18.20445,
+        lng: 120.59295,
         isOfficialDropoff: false,
         handoverInstructions:
-            "Baggage Counter & Librarian Circulation Desk, 3rd Floor.",
+            "INCAT Social Hall & Library — Librarian Circulation Desk.",
     },
     {
         name: "Gymnasium",
-        shortLabel: "Covered Gym",
-        buildingCode: "GYM-01",
-        lat: 14.6532,
-        lng: 121.0698,
+        shortLabel: "Covered Court / Practical Arts",
+        buildingCode: "INCAT-CRT",
+        lat: 18.20452,
+        lng: 120.59235,
         isOfficialDropoff: false,
-        handoverInstructions: "Bleachers Section B or PE Equipment Room.",
+        handoverInstructions:
+            "INCAT Covered Court Bleachers / Practical Arts & TVL Trade Shops.",
     },
     {
         name: "Computer Lab",
-        shortLabel: "Comp Lab",
-        buildingCode: "ICT-202",
-        lat: 14.6546,
-        lng: 121.0677,
+        shortLabel: "ICT / CSS Lab",
+        buildingCode: "INCAT-ICT",
+        lat: 18.20395,
+        lng: 120.59225,
         isOfficialDropoff: false,
-        handoverInstructions: "ICT Building 2nd Floor, Lab Technician Station.",
+        handoverInstructions:
+            "INCAT ICT Building — TVL-ICT / Computer Systems Servicing (CSS) Laboratory.",
     },
     {
         name: "Custom Room #",
-        shortLabel: "Custom Room",
-        buildingCode: "RM-CUSTOM",
-        lat: 14.6538,
-        lng: 121.0685,
+        shortLabel: "Custom Room / Shop",
+        buildingCode: "INCAT-RM",
+        lat: 18.20419,
+        lng: 120.59265,
         isOfficialDropoff: false,
         handoverInstructions:
-            "See specific room number or click on the map pin.",
+            "Specify Old/New RTS Building, SHS Classroom, or TVL Workshop.",
     },
 ];
 
