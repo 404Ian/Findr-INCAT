@@ -1,5 +1,5 @@
 {
-    "name": "qr-code",
+    "name": "tagguard",
     "private": true,
     "version": "0.0.0",
     "type": "module",
@@ -7,14 +7,23 @@
         "dev": "vite",
         "build": "tsc -b && vite build",
         "lint": "eslint .",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "pages:dev": "wrangler pages dev dist --d1 DB=tagguard-db",
+        "d1:init": "wrangler d1 execute tagguard-db --local --file=./schema.sql"
     },
     "dependencies": {
+        "leaflet": "^1.9.4",
+        "lucide-react": "^1.16.0",
+        "qrcode.react": "^4.2.0",
         "react": "^19.3.1",
-        "react-dom": "^19.3.1"
+        "react-dom": "^19.3.1",
+        "react-leaflet": "^5.0.0"
     },
     "devDependencies": {
+        "@cloudflare/workers-types": "^5.0.0",
         "@eslint/js": "^10.0.1",
+        "@tailwindcss/vite": "^4.1.0",
+        "@types/leaflet": "^1.9.16",
         "@types/node": "^24.19.2",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
@@ -23,8 +32,10 @@
         "eslint-plugin-react-hooks": "^7.1.1",
         "eslint-plugin-react-refresh": "^0.5.7",
         "globals": "^17.13.0",
+        "tailwindcss": "^4.1.0",
         "typescript": "~6.0.0",
         "typescript-eslint": "^8.72.0",
-        "vite": "^8.3.5"
+        "vite": "^8.3.5",
+        "wrangler": "^4.0.0"
     }
 }
