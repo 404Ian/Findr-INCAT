@@ -1,9 +1,9 @@
 import type { ChatMessage, ClaimAttempt, PostItem, QrGearItem } from "../types";
 
-const POSTS_KEY = "campusradar_posts_v2";
-const GEAR_KEY = "campusradar_gear_v2";
-const CHATS_KEY = "campusradar_chats_v2";
-const VERIFIED_KEY = "campusradar_verified_posts_v2";
+const POSTS_KEY = "findr_posts_v2";
+const GEAR_KEY = "findr_gear_v2";
+const CHATS_KEY = "findr_chats_v2";
+const VERIFIED_KEY = "findr_verified_posts_v2";
 
 const INITIAL_POSTS: PostItem[] = [
     {
@@ -46,7 +46,7 @@ const INITIAL_POSTS: PostItem[] = [
         title: "Obsidian Black 40oz AquaFlask (QR Tag #CR-AQUA-40OZ)",
         category: "Tumblers & Flasks",
         description:
-            "Accidentally left my matte black 40oz AquaFlask on the 2nd row bleachers of the Covered Gym after PE. It has a CampusRadar QR sticker on the side and a Robotics Club decal.",
+            "Accidentally left my matte black 40oz AquaFlask on the 2nd row bleachers of the Covered Gym after PE. It has a Findr QR sticker on the side and a Robotics Club decal.",
         hubId: "gymnasium",
         locationDetail: "Bleachers Section B / Drop off at Guard House",
         posterName: "Ian Dela Cruz",

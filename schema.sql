@@ -1,4 +1,3 @@
--- Cloudflare D1 Schema for CampusRadar Lost & Found Platform
 DROP TABLE IF EXISTS messages;
 
 DROP TABLE IF EXISTS verification_claims;
