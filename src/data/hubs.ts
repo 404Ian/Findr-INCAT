@@ -1,118 +1,120 @@
-import type { CampusHubName, ItemCategory } from "../types";
+import type { CampusHub, DemoUser } from "../types";
 
-export interface CampusHubPreset {
-    name: CampusHubName;
-    shortLabel: string;
-    buildingCode: string;
-    lat: number;
-    lng: number;
-    isOfficialDropoff: boolean;
-    handoverInstructions: string;
-}
-
-// Exact Coordinates for Ilocos Norte College of Arts and Trades (P. Gomez St., Brgy. 5, Laoag City)
-export const CAMPUS_CENTER: [number, number] = [18.20419, 120.59265];
-
-export const CAMPUS_HUBS: CampusHubPreset[] = [
+export const CAMPUS_HUBS: CampusHub[] = [
     {
-        name: "Main Gate / Guard House",
-        shortLabel: "INCAT Main Gate",
-        buildingCode: "INCAT-GATE",
-        lat: 18.20382,
-        lng: 120.59285,
-        isOfficialDropoff: true,
-        handoverInstructions:
-            "INCAT Main Gate Guard House & RFID Turnstile Desk along P. Gomez St. (Logbook available).",
-    },
-    {
+        id: "guidance",
+        code: "INCAT-GUID",
         name: "Guidance Office",
-        shortLabel: "Guidance Office",
-        buildingCode: "INCAT-GUID",
-        lat: 18.20415,
-        lng: 120.59255,
-        isOfficialDropoff: true,
-        handoverInstructions:
+        building: "Admin Bldg Room 102 — Ask for Ms. Santos",
+        custodyNote:
             "INCAT Guidance & Counseling Office. Claim between 7:30 AM – 4:30 PM with your INCAT ID.",
+        lat: 18.1986,
+        lng: 120.5932,
     },
     {
-        name: "SSG / Student Council Office",
-        shortLabel: "SSLG Office",
-        buildingCode: "INCAT-SSLG",
-        lat: 18.20432,
-        lng: 120.59272,
-        isOfficialDropoff: true,
-        handoverInstructions:
-            "INCAT Supreme Secondary Learner Government (SSLG) Office — Officer-on-Duty Desk.",
+        id: "guard-house",
+        code: "INCAT-GATE",
+        name: "Main Gate / Guard House",
+        building: "Turned in to Officer Bautista at Main Gate Guard House",
+        custodyNote:
+            "INCAT Main Gate Guard House & RFID Turnstile Desk along P. Gomez St. (Logbook available).",
+        lat: 18.1981,
+        lng: 120.5927,
     },
     {
-        name: "Principal's Office",
-        shortLabel: "Principal's Office",
-        buildingCode: "INCAT-ADMIN",
-        lat: 18.20408,
-        lng: 120.59262,
-        isOfficialDropoff: true,
-        handoverInstructions:
-            "INCAT Admin Building — Principal’s Office Reception Desk (for high-value gadgets & wallets).",
-    },
-    {
-        name: "Canteen",
-        shortLabel: "INCAT Canteen",
-        buildingCode: "INCAT-COOP",
-        lat: 18.20428,
-        lng: 120.59242,
-        isOfficialDropoff: false,
-        handoverInstructions:
-            "INCAT Multi-Purpose Cooperative Canteen Counter #1.",
-    },
-    {
-        name: "Library",
-        shortLabel: "Social Hall & Library",
-        buildingCode: "INCAT-LIB",
-        lat: 18.20445,
-        lng: 120.59295,
-        isOfficialDropoff: false,
-        handoverInstructions:
-            "INCAT Social Hall & Library — Librarian Circulation Desk.",
-    },
-    {
-        name: "Gymnasium",
-        shortLabel: "Covered Court / Practical Arts",
-        buildingCode: "INCAT-CRT",
-        lat: 18.20452,
-        lng: 120.59235,
-        isOfficialDropoff: false,
-        handoverInstructions:
-            "INCAT Covered Court Bleachers / Practical Arts & TVL Trade Shops.",
-    },
-    {
+        id: "computer-lab",
+        code: "INCAT-ICT",
         name: "Computer Lab",
-        shortLabel: "ICT / CSS Lab",
-        buildingCode: "INCAT-ICT",
-        lat: 18.20395,
-        lng: 120.59225,
-        isOfficialDropoff: false,
-        handoverInstructions:
+        building: "ICT Bldg Room 202 — Faculty Cubicle 4",
+        custodyNote:
             "INCAT ICT Building — TVL-ICT / Computer Systems Servicing (CSS) Laboratory.",
+        lat: 18.1984,
+        lng: 120.5936,
     },
     {
-        name: "Custom Room #",
-        shortLabel: "Custom Room / Shop",
-        buildingCode: "INCAT-RM",
-        lat: 18.20419,
-        lng: 120.59265,
-        isOfficialDropoff: false,
-        handoverInstructions:
-            "Specify Old/New RTS Building, SHS Classroom, or TVL Workshop.",
+        id: "gymnasium",
+        code: "INCAT-CRT",
+        name: "Gymnasium",
+        building: "Bleachers Section B / Drop off at Guard House",
+        custodyNote:
+            "INCAT Covered Court Bleachers / Practical Arts & TVL Trade Shops.",
+        lat: 18.1989,
+        lng: 120.5935,
+    },
+    {
+        id: "library",
+        code: "INCAT-LIB",
+        name: "Main Library",
+        building: "Social Hall & Library Bldg — 3rd Floor Circulation Desk",
+        custodyNote:
+            "INCAT School Library. Open Monday to Friday, 8:00 AM – 5:00 PM.",
+        lat: 18.1983,
+        lng: 120.5939,
+    },
+    {
+        id: "ssg-office",
+        code: "INCAT-SSG",
+        name: "SSG / Student Council Office",
+        building: "Student Center Room 104",
+        custodyNote:
+            "Supreme Student Government Office. Officer on duty available during lunch and dismissal.",
+        lat: 18.1987,
+        lng: 120.593,
+    },
+    {
+        id: "canteen",
+        code: "INCAT-CNT",
+        name: "School Canteen",
+        building: "Main Canteen Counter & Washing Area",
+        custodyNote:
+            "Turned over to Canteen Co-op Manager or Guidance Office after lunch period.",
+        lat: 18.1985,
+        lng: 120.5929,
     },
 ];
 
-export const ITEM_CATEGORIES: ItemCategory[] = [
-    "IDs & Lanyards",
+export const ITEM_CATEGORIES = [
+    "Wallets & Cash",
     "Tumblers & Flasks",
     "Phones & Gadgets",
     "Calculators",
+    "IDs & Lanyards",
+    "Keys & Locks",
     "Books & Notebooks",
-    "Wallets & Cash",
-    "Uniforms & PE Gear",
-    "Keys & Umbrellas",
+    "Uniform & Apparel",
 ];
+
+export const DEMO_USERS: DemoUser[] = [
+    {
+        id: "student-ian",
+        name: "Ian Dela Cruz",
+        role: "STUDENT",
+        dept: "Grade 12 - STEM A",
+        initials: "ID",
+    },
+    {
+        id: "office-clara",
+        name: "Ms. Clara Santos",
+        role: "OFFICE",
+        dept: "Guidance Office (ADM-102)",
+        initials: "CS",
+    },
+    {
+        id: "faculty-marco",
+        name: "Engr. Marco Reyes",
+        role: "FACULTY",
+        dept: "Mathematics & Robotics Dept",
+        initials: "MR",
+    },
+    {
+        id: "guard-bautista",
+        name: "Officer Bautista",
+        role: "GUARD",
+        dept: "Main Gate Security Desk",
+        initials: "OB",
+    },
+];
+
+export function getHubById(hubId: string): CampusHub {
+    return CAMPUS_HUBS.find((h) => h.id === hubId) || CAMPUS_HUBS[0];
+}
