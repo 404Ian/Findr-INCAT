@@ -1,13 +1,12 @@
 import type { CampusHub, DemoUser } from "../types";
 
 /**
- * Exact INCAT Campus Center (General Segundo Ave, Laoag City)
+ * Exact INCAT Campus Center (P. Gomez St / General Segundo Ave, Laoag City)
  */
 export const INCAT_CENTER: [number, number] = [18.20389, 120.59268];
 
 /**
  * Campus bounding box (~400m padding around INCAT)
- * Prevents map panning into downtown Laoag.
  */
 export const INCAT_MAX_BOUNDS: [[number, number], [number, number]] = [
     [18.2002, 120.5888], // South-West corner
@@ -15,8 +14,7 @@ export const INCAT_MAX_BOUNDS: [[number, number], [number, number]] = [
 ];
 
 /**
- * Editable INCAT Building & Custody Hub Coordinates
- * All positions sit inside the INCAT campus compound.
+ * INCAT Drop-off Hubs — coordinates sit directly on each building's entrance
  */
 export const CAMPUS_HUBS: CampusHub[] = [
     {
@@ -25,9 +23,9 @@ export const CAMPUS_HUBS: CampusHub[] = [
         name: "Main Gate / Guard House",
         building: "Main Gate Guard House & RFID Turnstile Desk",
         custodyNote:
-            "INCAT Main Gate Guard House along General Segundo Ave. Logbook available 6:00 AM – 7:00 PM.",
-        lat: 18.20352,
-        lng: 120.59218,
+            "INCAT Main Gate Guard House along P. Gomez St. Logbook available 6:00 AM – 7:00 PM.",
+        lat: 18.20354,
+        lng: 120.59219,
     },
     {
         id: "guidance",
@@ -36,18 +34,28 @@ export const CAMPUS_HUBS: CampusHub[] = [
         building: "Admin Building Room 102 — Ask for Ms. Santos",
         custodyNote:
             "INCAT Guidance & Counseling Office. Claim between 7:30 AM – 4:30 PM with your school ID.",
-        lat: 18.20378,
-        lng: 120.59248,
+        lat: 18.20376,
+        lng: 120.59242,
     },
     {
         id: "ict-building",
         code: "INCAT-ICT",
-        name: "ICT Building / Computer Lab",
+        name: "ICT Building",
         building: "ICT Building Room 202 — Faculty Cubicle 4",
         custodyNote:
-            "TVL-ICT & Computer Systems Servicing (CSS) Lab. Held at the ICT Faculty Desk.",
+            "TVL-ICT Department Desk. Open during school hours 7:30 AM – 5:00 PM.",
+        lat: 18.20416,
+        lng: 120.59256,
+    },
+    {
+        id: "computer-lab",
+        code: "INCAT-LAB",
+        name: "Computer Lab",
+        building: "Computer Systems Servicing (CSS) Lab 2",
+        custodyNote:
+            "Held at the Computer Lab technician desk. Bring your INCAT ID to verify.",
         lat: 18.20415,
-        lng: 120.59262,
+        lng: 120.59284,
     },
     {
         id: "gymnasium",
@@ -56,8 +64,8 @@ export const CAMPUS_HUBS: CampusHub[] = [
         building: "Covered Court Bleachers / PE Department Desk",
         custodyNote:
             "INCAT Covered Gymnasium. Unclaimed items are turned over to the Main Gate by 5:00 PM.",
-        lat: 18.20402,
-        lng: 120.59312,
+        lat: 18.20398,
+        lng: 120.59308,
     },
     {
         id: "library",
@@ -66,8 +74,8 @@ export const CAMPUS_HUBS: CampusHub[] = [
         building: "Library & Social Hall Building — Circulation Desk",
         custodyNote:
             "INCAT Campus Library. Open Monday to Friday, 8:00 AM – 5:00 PM.",
-        lat: 18.20368,
-        lng: 120.59295,
+        lat: 18.20372,
+        lng: 120.59292,
     },
     {
         id: "ssg-office",
@@ -76,8 +84,8 @@ export const CAMPUS_HUBS: CampusHub[] = [
         building: "Student Center Room 104",
         custodyNote:
             "Supreme Student Government Office. Officer on duty during recess, lunch, and dismissal.",
-        lat: 18.20394,
-        lng: 120.59238,
+        lat: 18.20395,
+        lng: 120.59236,
     },
     {
         id: "canteen",
@@ -86,8 +94,17 @@ export const CAMPUS_HUBS: CampusHub[] = [
         building: "Main Canteen Counter & Washing Area",
         custodyNote:
             "Held at the Canteen Co-op Counter during lunch, then forwarded to Guidance.",
-        lat: 18.20362,
-        lng: 120.59272,
+        lat: 18.20356,
+        lng: 120.59268,
+    },
+    {
+        id: "related-subjects",
+        code: "INCAT-RSB",
+        name: "Related Subjects Building",
+        building: "Related Subjects Bldg — 1st Floor Faculty Room",
+        custodyNote: "Academic & Related Subjects Department Faculty Room.",
+        lat: 18.20438,
+        lng: 120.59268,
     },
 ];
 

@@ -164,6 +164,75 @@
     padding: 2px 6px !important;
 }
 
+/* Keep MapLibre GL canvas behind Leaflet marker & tooltip panes */
+.leaflet-gl-layer,
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+    pointer-events: none !important;
+}
+
+.leaflet-control-attribution {
+    background-color: color-mix(
+        in srgb,
+        var(--surface) 88%,
+        transparent
+    ) !important;
+    color: var(--muted) !important;
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+}
+
+.leaflet-control-attribution a {
+    color: var(--text) !important;
+    text-decoration: none;
+}
+
+.leaflet-control-attribution a:hover {
+    text-decoration: underline;
+}
+
+/* Smooth 250ms crossfade on Satellite raster layer */
+.incat-satellite-layer {
+    transition: opacity 250ms ease !important;
+}
+
+/* 11px muted building labels (shown at zoom >= 18) */
+.incat-bldg-label-wrapper {
+    background: transparent;
+    border: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.incat-bldg-label {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--muted);
+    white-space: nowrap;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background-color: color-mix(in srgb, var(--surface) 82%, transparent);
+    letter-spacing: -0.01em;
+}
+
+.incat-bldg-label-sat {
+    color: #f5f5f4;
+    background-color: rgba(20, 20, 19, 0.72);
+}
+
+/* Keep MapLibre GL canvas behind Leaflet SVG polygons, labels, and pins */
+.leaflet-gl-layer,
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+    pointer-events: none !important;
+}
+
 @media print {
     body * {
         visibility: hidden;
