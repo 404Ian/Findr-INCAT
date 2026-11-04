@@ -1,5 +1,5 @@
 {
-    "name": "tagguard",
+    "name": "finder-incat",
     "private": true,
     "version": "0.0.0",
     "type": "module",
@@ -8,8 +8,8 @@
         "build": "tsc -b && vite build",
         "lint": "eslint .",
         "preview": "vite preview",
-        "pages:dev": "wrangler pages dev dist --d1 DB=tagguard-db",
-        "d1:init": "wrangler d1 execute tagguard-db --local --file=./schema.sql"
+        "pages:dev": "wrangler pages dev dist --d1 DB=finder-db",
+        "d1:init": "wrangler d1 execute finder-db --local --file=./schema.sql"
     },
     "dependencies": {
         "leaflet": "^1.9.4",

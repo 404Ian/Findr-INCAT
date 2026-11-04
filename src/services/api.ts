@@ -219,7 +219,7 @@ export const INITIAL_WALL_POSTS: WallPost[] = [
         id: "post-104",
         user_id: null,
         is_anonymous: true,
-        poster_name: "Anonymous Student / Onlooker",
+        poster_name: "Anonymous Student",
         poster_role: "student",
         poster_dept: "Anonymous Campus Tip",
         edit_passcode: "PASS-7741",
@@ -260,7 +260,7 @@ export const INITIAL_MESSAGES: ChatMessage[] = [
     {
         id: "msg-2",
         post_id: "post-102",
-        sender_name: "Anonymous Student / Onlooker",
+        sender_name: "Anonymous Student",
         sender_role: "student",
         is_anonymous: true,
         content:

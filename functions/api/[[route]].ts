@@ -76,7 +76,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     body.user_id || null,
                     body.is_anonymous ? 1 : 0,
                     body.is_anonymous
-                        ? "Anonymous Student / Onlooker"
+                        ? "Anonymous Student"
                         : body.poster_name,
                     body.poster_role || "student",
                     body.is_anonymous

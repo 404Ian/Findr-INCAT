@@ -1,8 +1,8 @@
-name = "tagguard"
+name = "findr-incat"
 pages_build_output_dir = "dist"
 compatibility_date = "2025-02-14"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "tagguard-db"
+database_name = "findr-db"
 database_id = "00000000-0000-0000-0000-000000000000"

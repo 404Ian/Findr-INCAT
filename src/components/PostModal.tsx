@@ -97,7 +97,7 @@ export const PostModal: React.FC<PostModalProps> = ({
             user_id: isAnonymous ? null : currentUser.id,
             is_anonymous: isAnonymous,
             poster_name: isAnonymous
-                ? "Anonymous Student / Onlooker"
+                ? "Anonymous Student"
                 : posterName,
             poster_role: posterRole,
             poster_dept: isAnonymous ? "Anonymous Campus Tip" : posterDept,
@@ -176,7 +176,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                         <p className="text-sm text-slate-300 max-w-md mx-auto">
                             Your identity is masked on the public wall as{" "}
                             <span className="text-white font-semibold">
-                                "Anonymous Student / Onlooker"
+                                "Anonymous Student"
                             </span>
                             . Save this one-time **Post Management Passcode** so
                             you can mark it resolved later:
@@ -330,7 +330,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                 <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg">
                                     Your name will be hidden as{" "}
                                     <strong>
-                                        "Anonymous Student / Onlooker"
+                                        "Anonymous Student"
                                     </strong>
                                     . We will generate a private passcode so you
                                     can still manage or close this post.

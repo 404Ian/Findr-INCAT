@@ -139,7 +139,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                             )}
                         >
                             <Popup>
-                                <div className="text-xs space-y-1.5 min-w-[180px]">
+                                <div className="text-xs space-y-1.5 min-w-45">
                                     <span
                                         className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono-tabular font-semibold uppercase ${
                                             post.post_type === "lost"

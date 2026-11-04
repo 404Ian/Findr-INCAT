@@ -75,7 +75,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs font-bold text-white flex items-center gap-1.5">
                                         {m.is_anonymous
-                                            ? "Anonymous Student / Onlooker"
+                                            ? "Anonymous Student"
                                             : m.sender_name}
                                         <span className="font-mono-tabular text-[10px] uppercase px-1.5 py-0.5 rounded bg-white/5 text-slate-300">
                                             {m.sender_role}
