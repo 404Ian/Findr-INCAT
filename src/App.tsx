@@ -1,1036 +1,938 @@
-import { useState, useMemo, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Radar,
-    PlusCircle,
-    QrCode,
-    Smartphone,
-    ShieldCheck,
     Search,
+    SlidersHorizontal,
+    Plus,
+    Sun,
+    Moon,
+    ChevronDown,
     MapPin,
-    Filter,
-    CheckCircle2,
-    KeyRound,
-    RotateCcw,
-    UserCheck,
-    Building2,
-    Sparkles,
-    AlertTriangle,
 } from "lucide-react";
-import type {
-    CampusHubName,
-    CampusRole,
-    ChatMessage,
-    ItemCategory,
-    RegisteredItem,
-    UserProfile,
-    WallPost,
-} from "./types";
-import { CAMPUS_HUBS, ITEM_CATEGORIES } from "./data/hubs";
-import { apiService, INITIAL_DEMO_USERS } from "./services/api";
+import {
+    CAMPUS_HUBS,
+    DEMO_USERS,
+    ITEM_CATEGORIES,
+    getHubById,
+} from "./data/hubs";
+import { api } from "./services/api";
 import { CampusMap } from "./components/CampusMap";
-import { ContactMatrix } from "./components/ContactMatrix";
-import { PostModal } from "./components/PostModal";
 import { ClaimVerifyDrawer } from "./components/ClaimVerifyDrawer";
 import { ChatDrawer } from "./components/ChatDrawer";
+import { PostModal } from "./components/PostModal";
 import { QrStickerStudio } from "./components/QrStickerStudio";
 import { QrScanSimulator } from "./components/QrScanSimulator";
+import type { DemoUser, PostItem, QrGearItem } from "./types";
+
+type ActiveTab = "wall" | "items" | "scan";
+type TypeFilter = "ALL" | "LOST" | "FOUND";
 
 export function App() {
-    const [activeTab, setActiveTab] = useState<
-        "wall" | "qr-studio" | "scan-sim"
-    >("wall");
-    const [currentUser, setCurrentUser] = useState<UserProfile>(
-        INITIAL_DEMO_USERS[0],
-    );
+    // Theme state (default: LIGHT)
+    const [darkMode, setDarkMode] = useState<boolean>(() => {
+        return localStorage.getItem("campusradar_theme") === "dark";
+    });
 
-    const [posts, setPosts] = useState<WallPost[]>(() => apiService.getPosts());
-    const [items, setItems] = useState<RegisteredItem[]>(() =>
-        apiService.getItems(),
-    );
-    const [messages, setMessages] = useState<ChatMessage[]>(() =>
-        apiService.getMessages(),
-    );
+    useEffect(() => {
+        const root = document.documentElement;
+        if (darkMode) {
+            root.classList.add("dark");
+            localStorage.setItem("campusradar_theme", "dark");
+        } else {
+            root.classList.remove("dark");
+            localStorage.setItem("campusradar_theme", "light");
+        }
+    }, [darkMode]);
 
-    // Multi-Dimensional Wall Filters
-    const [searchQuery, setSearchQuery] = useState("");
-    const [postTypeFilter, setPostTypeFilter] = useState<
-        "all" | "lost" | "found" | "resolved"
-    >("all");
-    const [roleFilter, setRoleFilter] = useState<"all" | CampusRole>("all");
-    const [hubFilter, setHubFilter] = useState<"all" | CampusHubName>("all");
-    const [categoryFilter, setCategoryFilter] = useState<"all" | ItemCategory>(
-        "all",
-    );
-    const [showCampusRadarMap, setShowCampusRadarMap] = useState(true);
+    // Navigation & URL `?scan=` sync
+    const [activeTab, setActiveTab] = useState<ActiveTab>("wall");
+    const [selectedScanTag, setSelectedScanTag] =
+        useState<string>("CR-991EX-STEM");
 
-    // Modals & Drawers
-    const [isPostModalOpen, setIsPostModalOpen] = useState(false);
-    const [activeClaimPostId, setActiveClaimPostId] = useState<string | null>(
-        null,
-    );
-    const [chatTarget, setChatTarget] = useState<{
-        title: string;
-        postId?: string;
-        itemId?: string;
-    } | null>(null);
-    const [simulatedScanItem, setSimulatedScanItem] = useState<RegisteredItem>(
-        () => items[0],
-    );
-    const [passcodePromptPostId, setPasscodePromptPostId] = useState<
-        string | null
-    >(null);
-    const [passcodeInput, setPasscodeInput] = useState("");
-
-    // Check if URL has ?scan=TAG_CODE parameter
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const scanCode = params.get("scan");
-        if (scanCode) {
-            const found = items.find(
-                (i) => i.tag_code.toLowerCase() === scanCode.toLowerCase(),
-            );
-            if (found) {
-                setSimulatedScanItem(found);
-                setActiveTab("scan-sim");
-            }
+        const scanParam = params.get("scan");
+        if (scanParam) {
+            setSelectedScanTag(scanParam);
         }
-    }, [items]);
+    }, []);
 
-    // Filtered Wall Posts
+    // Core data state
+    const [posts, setPosts] = useState<PostItem[]>([]);
+    const [gear, setGear] = useState<QrGearItem[]>([]);
+    const [verifiedPostIds, setVerifiedPostIds] = useState<string[]>([]);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    useEffect(() => {
+        setPosts(api.getPosts());
+        setGear(api.getGear());
+        setVerifiedPostIds(api.getVerifiedPostIds());
+        const timer = setTimeout(() => setIsLoading(false), 180);
+        return () => clearTimeout(timer);
+    }, []);
+
+    // User & Popover menus
+    const [currentUser, setCurrentUser] = useState<DemoUser>(DEMO_USERS[0]);
+    const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
+    const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
+
+    const avatarMenuRef = useRef<HTMLDivElement>(null);
+    const filterPopoverRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                avatarMenuRef.current &&
+                !avatarMenuRef.current.contains(e.target as Node)
+            ) {
+                setIsAvatarMenuOpen(false);
+            }
+            if (
+                filterPopoverRef.current &&
+                !filterPopoverRef.current.contains(e.target as Node)
+            ) {
+                setIsFilterPopoverOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () =>
+            document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Wall Filters & Map visibility (hidden by default)
+    const [showMap, setShowMap] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
+    const [hubFilter, setHubFilter] = useState<string>("ALL");
+    const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+    const [roleFilter, setRoleFilter] = useState<string>("ALL");
+
+    // Modals & Drawers
+    const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
+    const [chatPost, setChatPost] = useState<PostItem | null>(null);
+    const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+
+    // Counts for the plain single-line status summary
+    const stats = useMemo(() => {
+        const missing = posts.filter(
+            (p) => p.type === "LOST" && p.status === "OPEN",
+        ).length;
+        const found = posts.filter(
+            (p) => p.type === "FOUND" && p.status === "OPEN",
+        ).length;
+        const returned = posts.filter((p) => p.status === "RESOLVED").length;
+        return { missing, found, returned };
+    }, [posts]);
+
+    const activeExtraFilterCount =
+        (hubFilter !== "ALL" ? 1 : 0) +
+        (categoryFilter !== "ALL" ? 1 : 0) +
+        (roleFilter !== "ALL" ? 1 : 0);
+
     const filteredPosts = useMemo(() => {
         return posts.filter((post) => {
-            if (postTypeFilter === "resolved" && post.status !== "resolved")
+            if (typeFilter !== "ALL" && post.type !== typeFilter) return false;
+            if (hubFilter !== "ALL" && post.hubId !== hubFilter) return false;
+            if (categoryFilter !== "ALL" && post.category !== categoryFilter)
                 return false;
-            if (
-                postTypeFilter === "lost" &&
-                (post.post_type !== "lost" || post.status === "resolved")
-            )
-                return false;
-            if (
-                postTypeFilter === "found" &&
-                (post.post_type !== "found" || post.status === "resolved")
-            )
-                return false;
-
-            if (roleFilter !== "all" && post.poster_role !== roleFilter)
-                return false;
-            if (hubFilter !== "all" && post.campus_hub !== hubFilter)
-                return false;
-            if (categoryFilter !== "all" && post.category !== categoryFilter)
+            if (roleFilter !== "ALL" && post.posterRole !== roleFilter)
                 return false;
 
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase();
-                const matchTitle = post.title.toLowerCase().includes(q);
-                const matchDesc = post.description.toLowerCase().includes(q);
-                const matchRoom = (post.room_detail || "")
-                    .toLowerCase()
-                    .includes(q);
-                const matchPoster = post.poster_name.toLowerCase().includes(q);
-                if (!matchTitle && !matchDesc && !matchRoom && !matchPoster)
-                    return false;
+                const hubName = getHubById(post.hubId).name.toLowerCase();
+                const matches =
+                    post.title.toLowerCase().includes(q) ||
+                    post.description.toLowerCase().includes(q) ||
+                    post.posterName.toLowerCase().includes(q) ||
+                    post.locationDetail.toLowerCase().includes(q) ||
+                    hubName.includes(q) ||
+                    (post.linkedQrTag &&
+                        post.linkedQrTag.toLowerCase().includes(q));
+                if (!matches) return false;
             }
             return true;
         });
-    }, [
-        posts,
-        postTypeFilter,
-        roleFilter,
-        hubFilter,
-        categoryFilter,
-        searchQuery,
-    ]);
+    }, [posts, typeFilter, hubFilter, categoryFilter, roleFilter, searchQuery]);
 
     // Handlers
-    const handleCreatePost = (newPost: WallPost) => {
-        const updated = [newPost, ...posts];
+    const handleCreatePost = (
+        newPostData: Omit<PostItem, "id" | "createdAt" | "claims" | "status">,
+    ) => {
+        const created: PostItem = {
+            ...newPostData,
+            id: `post-${Date.now()}`,
+            status: "OPEN",
+            createdAt: "Just now",
+            claims: [],
+        };
+        const updated = [created, ...posts];
         setPosts(updated);
-        apiService.savePosts(updated);
-    };
-
-    const handleResolvePost = (post: WallPost) => {
-        if (post.is_anonymous && post.edit_passcode) {
-            setPasscodePromptPostId(post.id);
-            return;
-        }
-        const updated = posts.map((p) =>
-            p.id === post.id ? { ...p, status: "resolved" as const } : p,
-        );
-        setPosts(updated);
-        apiService.savePosts(updated);
-    };
-
-    const handleConfirmPasscodeResolve = (postId: string) => {
-        const target = posts.find((p) => p.id === postId);
-        if (!target) return;
-        if (
-            target.edit_passcode &&
-            passcodeInput.trim().toUpperCase() !==
-                target.edit_passcode.toUpperCase()
-        ) {
-            alert(`Passcode mismatch! Demo hint: ${target.edit_passcode}`);
-            return;
-        }
-        const updated = posts.map((p) =>
-            p.id === postId ? { ...p, status: "resolved" as const } : p,
-        );
-        setPosts(updated);
-        apiService.savePosts(updated);
-        setPasscodePromptPostId(null);
-        setPasscodeInput("");
+        api.savePosts(updated);
     };
 
     const handleSubmitClaim = (
         postId: string,
-        claimantName: string,
-        claimantRole: CampusRole,
         answer: string,
         contactInfo: string,
     ) => {
-        const newClaim = {
-            id: `claim-${Date.now().toString().slice(-4)}`,
-            post_id: postId,
-            claimant_name: claimantName,
-            claimant_role: claimantRole,
-            verification_answer: answer,
-            contact_info: contactInfo,
-            status: "pending" as const,
-            created_at: "Just now",
-        };
+        const target = posts.find((p) => p.id === postId);
+        const matchesHint =
+            target?.expectedAnswerHint &&
+            answer
+                .toLowerCase()
+                .includes(target.expectedAnswerHint.toLowerCase());
 
-        const updated = posts.map((p) => {
-            if (p.id !== postId) return p;
-            return {
-                ...p,
-                status: p.status === "open" ? ("verifying" as const) : p.status,
-                claims: [newClaim, ...p.claims],
-            };
+        const updated = api.submitClaim(postId, {
+            claimantName: currentUser.name,
+            claimantRole: currentUser.dept,
+            answer,
+            contactInfo,
+            status: matchesHint ? "APPROVED" : "PENDING",
         });
 
+        if (matchesHint) {
+            const nextVerified = api.markPostVerifiedForSession(postId);
+            setVerifiedPostIds(nextVerified);
+        }
+
         setPosts(updated);
-        apiService.savePosts(updated);
+        const refreshed = updated.find((p) => p.id === postId) || null;
+        setSelectedPost(refreshed);
     };
 
     const handleReviewClaim = (
         postId: string,
         claimId: string,
-        decision: "approved" | "rejected",
+        status: "APPROVED" | "REJECTED",
     ) => {
-        const updated = posts.map((p) => {
-            if (p.id !== postId) return p;
-            const updatedClaims = p.claims.map((c) =>
-                c.id === claimId ? { ...c, status: decision } : c,
-            );
-            return {
-                ...p,
-                status:
-                    decision === "approved" ? ("resolved" as const) : p.status,
-                claims: updatedClaims,
-            };
-        });
-
+        const updated = api.updateClaimStatus(postId, claimId, status);
         setPosts(updated);
-        apiService.savePosts(updated);
+        setVerifiedPostIds(api.getVerifiedPostIds());
+        setSelectedPost(updated.find((p) => p.id === postId) || null);
     };
 
-    const handleRegisterItem = (newItem: RegisteredItem) => {
-        const updated = [newItem, ...items];
-        setItems(updated);
-        apiService.saveItems(updated);
-    };
-
-    // 1-Click Lost Mode Escalation: Updates QR tag status AND cross-posts urgent alert to the Campus Wall
-    const handleToggleLostMode = (item: RegisteredItem) => {
-        const nextStatus = item.status === "lost" ? "safe" : "lost";
-        const updatedItems = items.map((i) =>
-            i.id === item.id
-                ? { ...i, status: nextStatus as "safe" | "lost" }
-                : i,
+    const handleResolvePost = (postId: string, passcode?: string) => {
+        const target = posts.find((p) => p.id === postId);
+        if (!target) return { ok: false, error: "Post not found." };
+        if (
+            target.passcode &&
+            target.passcode !== passcode &&
+            currentUser.name !== target.posterName
+        ) {
+            return { ok: false, error: "Incorrect passcode." };
+        }
+        const updated = posts.map((p) =>
+            p.id === postId ? { ...p, status: "RESOLVED" as const } : p,
         );
-        setItems(updatedItems);
-        apiService.saveItems(updatedItems);
+        setPosts(updated);
+        api.savePosts(updated);
+        setSelectedPost(updated.find((p) => p.id === postId) || null);
+        return { ok: true };
+    };
 
-        if (nextStatus === "lost") {
-            const autoPost: WallPost = {
-                id: `post-qr-${Date.now().toString().slice(-4)}`,
-                user_id: currentUser.id,
-                is_anonymous: false,
-                poster_name: item.owner_name,
-                poster_role: item.owner_role,
-                poster_dept: item.owner_dept,
-                linked_item_id: item.id,
-                post_type: "lost",
-                title: `LOST QR GEAR: ${item.name} (Tag #${item.tag_code})`,
-                description: `${item.custom_note} — Escalated via 1-Click Lost Mode from Student QR Locker.`,
-                category: item.category,
-                campus_hub: item.meetup_hub,
-                room_detail:
-                    item.meetup_room ||
-                    "Drop off at preferred hub or scan QR sticker",
-                lat: item.lat,
-                lng: item.lng,
-                contact_config: item.contact_config,
-                status: "open",
-                created_at: "Just now",
-                claims: [],
-            };
-            const updatedPosts = [autoPost, ...posts];
-            setPosts(updatedPosts);
-            apiService.savePosts(updatedPosts);
+    const handleDeletePost = (postId: string, passcode?: string) => {
+        const target = posts.find((p) => p.id === postId);
+        if (!target) return { ok: false, error: "Post not found." };
+        if (
+            target.passcode &&
+            target.passcode !== passcode &&
+            currentUser.name !== target.posterName
+        ) {
+            return { ok: false, error: "Incorrect passcode." };
+        }
+        const updated = posts.filter((p) => p.id !== postId);
+        setPosts(updated);
+        api.savePosts(updated);
+        setSelectedPost(null);
+        return { ok: true };
+    };
+
+    const handleToggleLostMode = (tagId: string) => {
+        const target = gear.find((g) => g.tagId === tagId);
+        if (!target) return;
+
+        const nextStatus = target.status === "LOST" ? "SAFE" : "LOST";
+        const updatedGear = gear.map((g) =>
+            g.tagId === tagId
+                ? { ...g, status: nextStatus as "SAFE" | "LOST" }
+                : g,
+        );
+        setGear(updatedGear);
+        api.saveGear(updatedGear);
+
+        if (nextStatus === "LOST") {
+            const existingPost = posts.find(
+                (p) => p.linkedQrTag === tagId && p.status === "OPEN",
+            );
+            if (!existingPost) {
+                const hub = getHubById(target.preferredHubId);
+                const autoPost: PostItem = {
+                    id: `post-qr-${Date.now()}`,
+                    type: "LOST",
+                    status: "OPEN",
+                    title: `${target.name} (QR Tag #${target.tagId})`,
+                    category: target.category,
+                    description: target.handoverNote,
+                    hubId: target.preferredHubId,
+                    locationDetail: `Drop off at ${hub.name}`,
+                    posterName: target.ownerName,
+                    posterRole: "STUDENT",
+                    posterDept: target.ownerSection,
+                    linkedQrTag: target.tagId,
+                    createdAt: "Just now",
+                    contactChannels: target.contactChannels,
+                    claims: [],
+                };
+                const nextPosts = [autoPost, ...posts];
+                setPosts(nextPosts);
+                api.savePosts(nextPosts);
+            }
         } else {
-            const updatedPosts = posts.map((p) =>
-                p.linked_item_id === item.id
-                    ? { ...p, status: "resolved" as const }
+            const nextPosts = posts.map((p) =>
+                p.linkedQrTag === tagId
+                    ? { ...p, status: "RESOLVED" as const }
                     : p,
             );
-            setPosts(updatedPosts);
-            apiService.savePosts(updatedPosts);
+            setPosts(nextPosts);
+            api.savePosts(nextPosts);
         }
     };
 
-    const handlePingItemLocation = (itemId: string, locationLabel: string) => {
-        const updated = items.map((i) =>
-            i.id === itemId
+    const handleRegisterGear = (newItem: QrGearItem) => {
+        const updated = [newItem, ...gear];
+        setGear(updated);
+        api.saveGear(updated);
+    };
+
+    const handlePingTagLocation = (tagId: string, locationName: string) => {
+        const updated = gear.map((g) =>
+            g.tagId === tagId
                 ? {
-                      ...i,
-                      last_ping_location: locationLabel,
-                      last_ping_time: "Just now",
+                      ...g,
+                      lastPingLocation: locationName,
+                      lastPingTime: "Just now",
                   }
-                : i,
+                : g,
         );
-        setItems(updated);
-        apiService.saveItems(updated);
-        const refreshed = updated.find((i) => i.id === itemId);
-        if (refreshed) setSimulatedScanItem(refreshed);
+        setGear(updated);
+        api.saveGear(updated);
     };
 
-    const handleSendMessage = (content: string, isAnonymous: boolean) => {
-        if (!chatTarget) return;
-        const newMsg: ChatMessage = {
-            id: `msg-${Date.now()}`,
-            post_id: chatTarget.postId,
-            item_id: chatTarget.itemId,
-            sender_name: currentUser.name,
-            sender_role: currentUser.role,
-            is_anonymous: isAnonymous,
-            content,
-            created_at: "Just now",
-        };
-        const updated = [...messages, newMsg];
-        setMessages(updated);
-        apiService.saveMessages(updated);
+    const resetAllFilters = () => {
+        setSearchQuery("");
+        setTypeFilter("ALL");
+        setHubFilter("ALL");
+        setCategoryFilter("ALL");
+        setRoleFilter("ALL");
     };
-
-    const activeClaimPost =
-        posts.find((p) => p.id === activeClaimPostId) || null;
-    const activeChatMessages = messages.filter(
-        (m) =>
-            (chatTarget?.postId && m.post_id === chatTarget.postId) ||
-            (chatTarget?.itemId && m.item_id === chatTarget.itemId),
-    );
 
     return (
-        <div className="min-h-screen flex flex-col">
-            {/* Sticky Glass Navigation Header */}
-            <header className="no-print sticky top-0 z-40 radar-glass border-b border-white/10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-                    {/* Brand Logo */}
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shadow-inner">
-                            <Radar className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-base font-extrabold tracking-tight text-white">
-                                    CampusRadar
-                                </span>
-                                <span className="font-mono-tabular text-[10px] uppercase px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 font-semibold">
-                                    Find My • School Edition
-                                </span>
-                            </div>
-                            <p className="text-[11px] text-slate-400">
-                                Community Lost & Found Wall • Anti-Theft
-                                Verification • DIY QR Sticker Studio
-                            </p>
-                        </div>
-                    </div>
+        <div className="min-h-screen flex flex-col bg-bg text-text pb-16 sm:pb-0">
+            {/* Slim Top Header */}
+            <header className="h-14 border-b border-border bg-surface sticky top-0 z-30">
+                <div className="max-w-275 mx-auto h-full px-4 sm:px-6 flex items-center justify-between gap-4">
+                    {/* Left: Plain text wordmark */}
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("wall")}
+                        className="text-base font-medium text-text tracking-tight hover:opacity-80 transition-opacity duration-150"
+                    >
+                        CampusRadar
+                    </button>
 
-                    {/* Primary Navigation Tabs */}
-                    <nav className="flex items-center gap-1.5 bg-radar-bg/90 p-1.5 rounded-xl border border-white/10">
+                    {/* Center: Three plain text tabs (Desktop) */}
+                    <nav
+                        aria-label="Main navigation"
+                        className="hidden sm:flex items-center gap-6"
+                    >
                         <button
+                            type="button"
                             onClick={() => setActiveTab("wall")}
-                            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                            className={`text-sm py-4 border-b-2 transition-colors duration-150 ${
                                 activeTab === "wall"
-                                    ? "bg-radar-blue text-white shadow"
-                                    : "text-slate-400 hover:text-white"
+                                    ? "border-text text-text font-medium"
+                                    : "border-transparent text-muted hover:text-text"
                             }`}
                         >
-                            <Radar className="w-3.5 h-3.5" />
-                            Campus Wall (
-                            {
-                                posts.filter((p) => p.status !== "resolved")
-                                    .length
-                            }
-                            )
+                            Wall
                         </button>
                         <button
-                            onClick={() => setActiveTab("qr-studio")}
-                            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                                activeTab === "qr-studio"
-                                    ? "bg-radar-blue text-white shadow"
-                                    : "text-slate-400 hover:text-white"
+                            type="button"
+                            onClick={() => setActiveTab("items")}
+                            className={`text-sm py-4 border-b-2 transition-colors duration-150 ${
+                                activeTab === "items"
+                                    ? "border-text text-text font-medium"
+                                    : "border-transparent text-muted hover:text-text"
                             }`}
                         >
-                            <QrCode className="w-3.5 h-3.5" />
-                            My QR Locker & Sticker Studio ({items.length})
+                            My items
                         </button>
                         <button
-                            onClick={() => setActiveTab("scan-sim")}
-                            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                                activeTab === "scan-sim"
-                                    ? "bg-radar-blue text-white shadow"
-                                    : "text-slate-400 hover:text-white"
+                            type="button"
+                            onClick={() => setActiveTab("scan")}
+                            className={`text-sm py-4 border-b-2 transition-colors duration-150 ${
+                                activeTab === "scan"
+                                    ? "border-text text-text font-medium"
+                                    : "border-transparent text-muted hover:text-text"
                             }`}
                         >
-                            <Smartphone className="w-3.5 h-3.5" />
-                            QR Scan Simulator
+                            Scan
                         </button>
                     </nav>
 
-                    {/* Active Campus Role Switcher & Post CTA */}
+                    {/* Right: Single Post button + Theme toggle + Avatar menu */}
                     <div className="flex items-center gap-2.5">
-                        <div className="hidden sm:flex items-center gap-2 bg-radar-bg px-3 py-1.5 rounded-xl border border-white/10">
-                            <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                            <select
-                                aria-label="Switch active demo user profile"
-                                value={currentUser.id}
-                                onChange={(e) => {
-                                    const found = INITIAL_DEMO_USERS.find(
-                                        (u) => u.id === e.target.value,
-                                    );
-                                    if (found) setCurrentUser(found);
-                                }}
-                                className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer"
-                            >
-                                {INITIAL_DEMO_USERS.map((u) => (
-                                    <option
-                                        key={u.id}
-                                        value={u.id}
-                                        className="bg-radar-card text-white"
-                                    >
-                                        {u.name} ({u.role.toUpperCase()})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsPostModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-accent text-accent-fg text-sm font-medium rounded-md hover:opacity-90 transition-opacity duration-150"
+                        >
+                            <Plus size={16} strokeWidth={1.5} />
+                            Post
+                        </button>
 
                         <button
-                            onClick={() => setIsPostModalOpen(true)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-radar-blue hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/25 transition cursor-pointer"
+                            type="button"
+                            onClick={() => setDarkMode(!darkMode)}
+                            aria-label="Toggle color theme"
+                            className="p-2 text-muted hover:text-text rounded-md border border-border bg-surface transition-colors duration-150"
                         >
-                            <PlusCircle className="w-4 h-4" />
-                            Post Lost / Found
+                            {darkMode ? (
+                                <Sun size={16} strokeWidth={1.5} />
+                            ) : (
+                                <Moon size={16} strokeWidth={1.5} />
+                            )}
                         </button>
+
+                        {/* Avatar Menu with Role Switcher */}
+                        <div className="relative" ref={avatarMenuRef}>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setIsAvatarMenuOpen(!isAvatarMenuOpen)
+                                }
+                                aria-label="Account and demo role switcher"
+                                aria-expanded={isAvatarMenuOpen}
+                                className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 text-xs font-medium border border-border rounded-md bg-surface text-text hover:bg-subtle transition-colors duration-150"
+                            >
+                                <span>{currentUser.initials}</span>
+                                <ChevronDown
+                                    size={14}
+                                    strokeWidth={1.5}
+                                    className="text-muted"
+                                />
+                            </button>
+
+                            {isAvatarMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-64 bg-surface border border-border rounded-lg p-2 shadow-popover z-40">
+                                    <div className="px-2.5 py-2 border-b border-border">
+                                        <div className="text-sm font-medium text-text">
+                                            {currentUser.name}
+                                        </div>
+                                        <div className="text-xs text-muted">
+                                            {currentUser.dept}
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-2 pb-1 px-2.5 text-xs text-muted">
+                                        Demo: switch user
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                        {DEMO_USERS.map((u) => {
+                                            const active =
+                                                u.id === currentUser.id;
+                                            return (
+                                                <button
+                                                    key={u.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCurrentUser(u);
+                                                        setIsAvatarMenuOpen(
+                                                            false,
+                                                        );
+                                                    }}
+                                                    className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between transition-colors duration-150 ${
+                                                        active
+                                                            ? "bg-subtle text-text font-medium"
+                                                            : "text-muted hover:text-text hover:bg-subtle/50"
+                                                    }`}
+                                                >
+                                                    <span>{u.name}</span>
+                                                    <span className="text-muted">
+                                                        {u.role.toLowerCase()}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>
 
             {/* Main Content Container */}
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <main className="flex-1 w-full max-w-275 mx-auto px-4 sm:px-6 py-8">
                 {activeTab === "wall" && (
-                    <>
-                        {/* Top Radar Overview & Collapsible Map */}
-                        <div className="radar-card rounded-2xl p-5 space-y-4">
-                            <div className="flex flex-wrap items-center justify-between gap-4">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <span className="inline-flex items-center gap-2 text-xs font-mono-tabular uppercase px-3 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-semibold">
-                                        <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                        {
-                                            posts.filter(
-                                                (p) =>
-                                                    p.post_type === "lost" &&
-                                                    p.status !== "resolved",
-                                            ).length
-                                        }{" "}
-                                        Active Missing Alerts
-                                    </span>
-                                    <span className="inline-flex items-center gap-2 text-xs font-mono-tabular uppercase px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold">
-                                        <ShieldCheck className="w-3.5 h-3.5" />
-                                        {
-                                            posts.filter(
-                                                (p) =>
-                                                    p.post_type === "found" &&
-                                                    p.status !== "resolved",
-                                            ).length
-                                        }{" "}
-                                        Found / Held in Custody
-                                    </span>
-                                    <span className="inline-flex items-center gap-2 text-xs font-mono-tabular uppercase px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        {
-                                            posts.filter(
-                                                (p) => p.status === "resolved",
-                                            ).length
-                                        }{" "}
-                                        Verified & Returned
-                                    </span>
-                                </div>
+                    <div>
+                        {/* Stat line & Show Map link */}
+                        <div className="flex items-center justify-between gap-4 mb-6 text-sm">
+                            <p className="text-muted">
+                                <span className="text-text font-medium">
+                                    {stats.missing}
+                                </span>{" "}
+                                missing ·{" "}
+                                <span className="text-text font-medium">
+                                    {stats.found}
+                                </span>{" "}
+                                found ·{" "}
+                                <span className="text-text font-medium">
+                                    {stats.returned}
+                                </span>{" "}
+                                returned
+                            </p>
 
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() =>
-                                            setShowCampusRadarMap(
-                                                !showCampusRadarMap,
-                                            )
-                                        }
-                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 border border-white/10 transition cursor-pointer"
-                                    >
-                                        {showCampusRadarMap
-                                            ? "Hide Campus Radar Map"
-                                            : "Show Campus Radar Map"}
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            const reset =
-                                                apiService.resetDemoData();
-                                            setPosts(reset.posts);
-                                            setItems(reset.items);
-                                            setMessages(reset.messages);
-                                        }}
-                                        title="Reset demo data to default state"
-                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition cursor-pointer"
-                                    >
-                                        <RotateCcw className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowMap(!showMap)}
+                                className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:opacity-80 transition-opacity duration-150"
+                            >
+                                <MapPin size={15} strokeWidth={1.5} />
+                                {showMap ? "Hide map" : "Show map"}
+                            </button>
+                        </div>
 
-                            {showCampusRadarMap && (
-                                <CampusMap
-                                    posts={filteredPosts}
-                                    onSelectPost={(post) => {
-                                        const el = document.getElementById(
-                                            post.id,
-                                        );
-                                        if (el)
-                                            el.scrollIntoView({
-                                                behavior: "smooth",
-                                                block: "center",
-                                            });
-                                    }}
-                                    heightClass="h-64"
+                        {/* Collapsible Map */}
+                        {showMap && (
+                            <CampusMap
+                                posts={posts}
+                                selectedHubId={hubFilter}
+                                onSelectHub={(id) => setHubFilter(id)}
+                                onSelectPost={(post) => setSelectedPost(post)}
+                            />
+                        )}
+
+                        {/* Search Input + Segmented Control + Single Filters Button */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6">
+                            <div className="relative flex-1">
+                                <Search
+                                    size={16}
+                                    strokeWidth={1.5}
+                                    className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                                 />
-                            )}
-                        </div>
-
-                        {/* Multi-Dimensional Filtering Bar */}
-                        <div className="radar-card rounded-2xl p-4 space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                                {/* Search input */}
-                                <div className="md:col-span-4 relative">
-                                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={(e) =>
-                                            setSearchQuery(e.target.value)
-                                        }
-                                        placeholder="Search item, room #, brand, or custody office..."
-                                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-radar-bg border border-white/10 text-xs text-white focus:border-blue-500 outline-none"
-                                    />
-                                </div>
-
-                                {/* Post Type Filter */}
-                                <div className="md:col-span-2">
-                                    <select
-                                        aria-label="Filter by post type"
-                                        value={postTypeFilter}
-                                        onChange={(e) =>
-                                            setPostTypeFilter(
-                                                e.target.value as
-                                                    | "all"
-                                                    | "lost"
-                                                    | "found"
-                                                    | "resolved",
-                                            )
-                                        }
-                                        className="w-full px-3 py-2 rounded-xl bg-radar-bg border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="all">
-                                            All Post Types
-                                        </option>
-                                        <option value="lost">
-                                            Lost Items (Looking For)
-                                        </option>
-                                        <option value="found">
-                                            Found Items (Turned In)
-                                        </option>
-                                        <option value="resolved">
-                                            Resolved / Returned
-                                        </option>
-                                    </select>
-                                </div>
-
-                                {/* Poster / Custody Role Filter */}
-                                <div className="md:col-span-2">
-                                    <select
-                                        aria-label="Filter by poster role"
-                                        value={roleFilter}
-                                        onChange={(e) =>
-                                            setRoleFilter(
-                                                e.target.value as
-                                                    | "all"
-                                                    | CampusRole,
-                                            )
-                                        }
-                                        className="w-full px-3 py-2 rounded-xl bg-radar-bg border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="all">
-                                            All Custody Roles
-                                        </option>
-                                        <option value="staff">
-                                            Official Staff / Office Custody
-                                        </option>
-                                        <option value="faculty">
-                                            Faculty / Teachers
-                                        </option>
-                                        <option value="student">
-                                            Students
-                                        </option>
-                                    </select>
-                                </div>
-
-                                {/* Campus Zone / Drop-off Hub Filter */}
-                                <div className="md:col-span-2">
-                                    <select
-                                        aria-label="Filter by campus zone"
-                                        value={hubFilter}
-                                        onChange={(e) =>
-                                            setHubFilter(
-                                                e.target.value as
-                                                    | "all"
-                                                    | CampusHubName,
-                                            )
-                                        }
-                                        className="w-full px-3 py-2 rounded-xl bg-radar-bg border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="all">
-                                            All Campus Hubs
-                                        </option>
-                                        {CAMPUS_HUBS.map((h) => (
-                                            <option key={h.name} value={h.name}>
-                                                {h.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Item Category Filter */}
-                                <div className="md:col-span-2">
-                                    <select
-                                        aria-label="Filter by item category"
-                                        value={categoryFilter}
-                                        onChange={(e) =>
-                                            setCategoryFilter(
-                                                e.target.value as
-                                                    | "all"
-                                                    | ItemCategory,
-                                            )
-                                        }
-                                        className="w-full px-3 py-2 rounded-xl bg-radar-bg border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="all">
-                                            All Categories
-                                        </option>
-                                        {ITEM_CATEGORIES.map((c) => (
-                                            <option key={c} value={c}>
-                                                {c}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                <input
+                                    type="search"
+                                    value={searchQuery}
+                                    onChange={(e) =>
+                                        setSearchQuery(e.target.value)
+                                    }
+                                    placeholder="Search items, buildings, or names..."
+                                    aria-label="Search posts"
+                                    className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-border rounded-md text-text placeholder:text-muted"
+                                />
                             </div>
 
-                            {/* Quick Filter Pills */}
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="text-slate-400 flex items-center gap-1 mr-1">
-                                        <Filter className="w-3 h-3" /> Quick
-                                        Custody Filter:
-                                    </span>
-                                    <button
-                                        onClick={() =>
-                                            setRoleFilter(
-                                                roleFilter === "staff"
-                                                    ? "all"
-                                                    : "staff",
-                                            )
-                                        }
-                                        className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${
-                                            roleFilter === "staff"
-                                                ? "bg-blue-600 text-white"
-                                                : "bg-white/5 text-slate-300 hover:bg-white/10"
-                                        }`}
-                                    >
-                                        Held by Official School Office
-                                    </button>
-                                    <button
-                                        onClick={() =>
-                                            setHubFilter(
-                                                hubFilter ===
-                                                    "Main Gate / Guard House"
-                                                    ? "all"
-                                                    : "Main Gate / Guard House",
-                                            )
-                                        }
-                                        className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${
-                                            hubFilter ===
-                                            "Main Gate / Guard House"
-                                                ? "bg-blue-600 text-white"
-                                                : "bg-white/5 text-slate-300 hover:bg-white/10"
-                                        }`}
-                                    >
-                                        Main Gate Guard House
-                                    </button>
-                                    <button
-                                        onClick={() =>
-                                            setHubFilter(
-                                                hubFilter === "Guidance Office"
-                                                    ? "all"
-                                                    : "Guidance Office",
-                                            )
-                                        }
-                                        className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${
-                                            hubFilter === "Guidance Office"
-                                                ? "bg-blue-600 text-white"
-                                                : "bg-white/5 text-slate-300 hover:bg-white/10"
-                                        }`}
-                                    >
-                                        Guidance Office
-                                    </button>
+                            <div className="flex items-center gap-2">
+                                {/* Segmented Control: All / Lost / Found */}
+                                <div
+                                    role="group"
+                                    aria-label="Filter by post type"
+                                    className="inline-flex p-0.5 bg-subtle border border-border rounded-md"
+                                >
+                                    {(
+                                        ["ALL", "LOST", "FOUND"] as TypeFilter[]
+                                    ).map((t) => {
+                                        const active = typeFilter === t;
+                                        const label =
+                                            t === "ALL"
+                                                ? "All"
+                                                : t === "LOST"
+                                                  ? "Lost"
+                                                  : "Found";
+                                        return (
+                                            <button
+                                                key={t}
+                                                type="button"
+                                                onClick={() => setTypeFilter(t)}
+                                                className={`px-3 py-1 text-xs font-medium rounded transition-colors duration-150 ${
+                                                    active
+                                                        ? "bg-surface text-text border border-border"
+                                                        : "text-muted hover:text-text"
+                                                }`}
+                                            >
+                                                {label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
 
-                                <span className="font-mono-tabular text-slate-400">
-                                    Showing {filteredPosts.length} of{" "}
-                                    {posts.length} posts
-                                </span>
+                                {/* Single Filters Popover Button */}
+                                <div
+                                    className="relative"
+                                    ref={filterPopoverRef}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setIsFilterPopoverOpen(
+                                                !isFilterPopoverOpen,
+                                            )
+                                        }
+                                        aria-expanded={isFilterPopoverOpen}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-surface border border-border rounded-md text-text hover:bg-subtle transition-colors duration-150"
+                                    >
+                                        <SlidersHorizontal
+                                            size={14}
+                                            strokeWidth={1.5}
+                                        />
+                                        <span>
+                                            Filters
+                                            {activeExtraFilterCount > 0
+                                                ? ` (${activeExtraFilterCount})`
+                                                : ""}
+                                        </span>
+                                    </button>
+
+                                    {isFilterPopoverOpen && (
+                                        <div className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-lg p-4 shadow-popover z-40 space-y-3">
+                                            <div>
+                                                <label
+                                                    htmlFor="filter-hub"
+                                                    className="block text-xs text-muted mb-1"
+                                                >
+                                                    Campus hub
+                                                </label>
+                                                <select
+                                                    id="filter-hub"
+                                                    value={hubFilter}
+                                                    onChange={(e) =>
+                                                        setHubFilter(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-bg border border-border rounded-md text-text"
+                                                >
+                                                    <option value="ALL">
+                                                        All buildings
+                                                    </option>
+                                                    {CAMPUS_HUBS.map((h) => (
+                                                        <option
+                                                            key={h.id}
+                                                            value={h.id}
+                                                        >
+                                                            {h.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label
+                                                    htmlFor="filter-cat"
+                                                    className="block text-xs text-muted mb-1"
+                                                >
+                                                    Category
+                                                </label>
+                                                <select
+                                                    id="filter-cat"
+                                                    value={categoryFilter}
+                                                    onChange={(e) =>
+                                                        setCategoryFilter(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-bg border border-border rounded-md text-text"
+                                                >
+                                                    <option value="ALL">
+                                                        All categories
+                                                    </option>
+                                                    {ITEM_CATEGORIES.map(
+                                                        (c) => (
+                                                            <option
+                                                                key={c}
+                                                                value={c}
+                                                            >
+                                                                {c}
+                                                            </option>
+                                                        ),
+                                                    )}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label
+                                                    htmlFor="filter-role"
+                                                    className="block text-xs text-muted mb-1"
+                                                >
+                                                    Custody role
+                                                </label>
+                                                <select
+                                                    id="filter-role"
+                                                    value={roleFilter}
+                                                    onChange={(e) =>
+                                                        setRoleFilter(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-bg border border-border rounded-md text-text"
+                                                >
+                                                    <option value="ALL">
+                                                        Anyone
+                                                    </option>
+                                                    <option value="OFFICE">
+                                                        Guidance / Official
+                                                        Office
+                                                    </option>
+                                                    <option value="GUARD">
+                                                        Main Gate Guard House
+                                                    </option>
+                                                    <option value="FACULTY">
+                                                        Faculty
+                                                    </option>
+                                                    <option value="STUDENT">
+                                                        Student
+                                                    </option>
+                                                </select>
+                                            </div>
+
+                                            <div className="pt-2 border-t border-border flex items-center justify-between">
+                                                <button
+                                                    type="button"
+                                                    onClick={resetAllFilters}
+                                                    className="text-xs text-muted hover:text-text"
+                                                >
+                                                    Reset filters
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setIsFilterPopoverOpen(
+                                                            false,
+                                                        )
+                                                    }
+                                                    className="text-xs font-medium text-accent"
+                                                >
+                                                    Done
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
-                        {/* Community Wall Post Grid */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                            {filteredPosts.map((post) => {
-                                const isLost = post.post_type === "lost";
-                                const isResolved = post.status === "resolved";
-                                const hasApprovedClaim = post.claims.some(
-                                    (c) => c.status === "approved",
-                                );
-                                const requiresVerification =
-                                    post.post_type === "found" &&
-                                    Boolean(post.verification_question) &&
-                                    !hasApprovedClaim &&
-                                    !isResolved;
-
-                                return (
-                                    <article
-                                        id={post.id}
-                                        key={post.id}
-                                        className={`radar-card rounded-2xl p-5 flex flex-col justify-between space-y-4 transition ${
-                                            isResolved
-                                                ? "opacity-80 border-emerald-500/30"
-                                                : isLost
-                                                  ? "border-red-500/30"
-                                                  : "border-amber-500/30"
-                                        }`}
+                        {/* Skeleton Loading State */}
+                        {isLoading ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {[1, 2, 3, 4].map((n) => (
+                                    <div
+                                        key={n}
+                                        className="border border-border rounded-lg bg-surface p-6 space-y-3"
                                     >
-                                        <div className="space-y-3">
-                                            {/* Top Status & Role Badges */}
-                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span
-                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-tabular font-bold uppercase ${
-                                                            isResolved
-                                                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                                                : isLost
-                                                                  ? "bg-red-500/20 text-red-300 border border-red-500/30"
-                                                                  : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                                                        }`}
-                                                    >
-                                                        {!isResolved && (
-                                                            <span
-                                                                className={`w-2 h-2 rounded-full ${
-                                                                    isLost
-                                                                        ? "bg-red-400 animate-ping"
-                                                                        : "bg-amber-400"
-                                                                }`}
-                                                            />
-                                                        )}
-                                                        {isResolved
-                                                            ? "VERIFIED & RETURNED"
-                                                            : isLost
-                                                              ? "MISSING / LOST ALERT"
-                                                              : "FOUND ON CAMPUS"}
-                                                    </span>
+                                        <div className="h-4 w-2/3 bg-subtle rounded animate-pulse" />
+                                        <div className="h-3.5 w-full bg-subtle rounded animate-pulse" />
+                                        <div className="h-3 w-1/2 bg-subtle rounded animate-pulse pt-2" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : filteredPosts.length === 0 ? (
+                            /* Single-line Empty State */
+                            <div className="py-12 text-center border border-border rounded-lg bg-surface text-sm text-muted">
+                                No matching items found.{" "}
+                                <button
+                                    type="button"
+                                    onClick={resetAllFilters}
+                                    className="text-accent font-medium hover:underline ml-1"
+                                >
+                                    Clear filters
+                                </button>
+                            </div>
+                        ) : (
+                            /* Minimal 2-Column Equal-Height Post Grid */
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {filteredPosts.map((post) => {
+                                    const hub = getHubById(post.hubId);
+                                    const isResolved =
+                                        post.status === "RESOLVED";
+                                    const statusText = isResolved
+                                        ? "Returned"
+                                        : post.type === "LOST"
+                                          ? "Lost"
+                                          : "Found";
+                                    const dotClass = isResolved
+                                        ? "bg-returned"
+                                        : post.type === "LOST"
+                                          ? "bg-lost"
+                                          : "bg-found";
+                                    const actionText = isResolved
+                                        ? "Details"
+                                        : post.type === "FOUND"
+                                          ? "Claim"
+                                          : "I found this";
 
-                                                    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-mono-tabular text-slate-300">
-                                                        {post.category}
+                                    return (
+                                        <article
+                                            key={post.id}
+                                            onClick={() =>
+                                                setSelectedPost(post)
+                                            }
+                                            tabIndex={0}
+                                            role="button"
+                                            onKeyDown={(e) => {
+                                                if (
+                                                    e.key === "Enter" ||
+                                                    e.key === " "
+                                                ) {
+                                                    e.preventDefault();
+                                                    setSelectedPost(post);
+                                                }
+                                            }}
+                                            className="border border-border rounded-lg bg-surface p-6 flex flex-col justify-between hover:border-muted transition-colors duration-150 cursor-pointer text-left"
+                                        >
+                                            <div>
+                                                {/* Header: Title (500 weight) + Small Status Dot on Top-Right */}
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <h2 className="text-base font-medium text-text leading-snug">
+                                                        {post.title}
+                                                    </h2>
+                                                    <span className="inline-flex items-center gap-1.5 text-xs text-muted shrink-0 pt-0.5">
+                                                        <span
+                                                            className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+                                                        />
+                                                        {statusText}
                                                     </span>
                                                 </div>
 
-                                                <span className="font-mono-tabular text-[11px] text-slate-400">
-                                                    {post.created_at}
-                                                </span>
-                                            </div>
-
-                                            {/* Headline & Description */}
-                                            <div>
-                                                <h3 className="text-base font-bold text-white leading-snug">
-                                                    {post.title}
-                                                </h3>
-                                                <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                                                {/* Single line of description */}
+                                                <p className="text-sm text-muted line-clamp-1 mt-1.5">
                                                     {post.description}
                                                 </p>
                                             </div>
 
-                                            {/* Poster / Custody Metadata */}
-                                            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-radar-bg/70 border border-white/5 text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span
-                                                        className={`font-mono-tabular text-[10px] uppercase px-2 py-0.5 rounded font-bold ${
-                                                            post.poster_role ===
-                                                            "staff"
-                                                                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                                                                : post.poster_role ===
-                                                                    "faculty"
-                                                                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                                                  : "bg-white/10 text-slate-300"
-                                                        }`}
-                                                    >
-                                                        {post.poster_role ===
-                                                        "staff"
-                                                            ? "OFFICIAL OFFICE CUSTODY"
-                                                            : post.poster_role.toUpperCase()}
-                                                    </span>
-                                                    <span className="font-semibold text-white">
-                                                        {post.poster_name}
-                                                    </span>
-                                                    {post.poster_dept && (
-                                                        <span className="text-slate-400 text-[11px]">
-                                                            ({post.poster_dept})
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex items-center gap-1 text-[11px] text-blue-400 font-medium">
-                                                    {post.poster_role ===
-                                                    "staff" ? (
-                                                        <Building2 className="w-3.5 h-3.5" />
-                                                    ) : (
-                                                        <MapPin className="w-3.5 h-3.5" />
-                                                    )}
-                                                    {post.campus_hub}
-                                                </div>
+                                            {/* Muted meta line + One text-style action button */}
+                                            <div className="mt-6 pt-3 border-t border-border flex items-center justify-between gap-4 text-xs">
+                                                <span className="text-muted truncate">
+                                                    {hub.name} ·{" "}
+                                                    {post.createdAt} ·{" "}
+                                                    {post.posterName}
+                                                </span>
+                                                <span className="font-medium text-accent hover:opacity-80 shrink-0">
+                                                    {actionText}
+                                                </span>
                                             </div>
-
-                                            {/* Ownership Verification Challenge Box (For Found Items) */}
-                                            {post.post_type === "found" &&
-                                                post.verification_question && (
-                                                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                        <div className="space-y-0.5">
-                                                            <div className="text-[10px] font-mono-tabular uppercase text-amber-300 font-bold flex items-center gap-1">
-                                                                <ShieldCheck className="w-3.5 h-3.5" />{" "}
-                                                                Ownership
-                                                                Verification
-                                                                Required to
-                                                                Claim
-                                                            </div>
-                                                            <p className="text-xs text-white font-medium">
-                                                                "
-                                                                {
-                                                                    post.verification_question
-                                                                }
-                                                                "
-                                                            </p>
-                                                        </div>
-
-                                                        <button
-                                                            onClick={() =>
-                                                                setActiveClaimPostId(
-                                                                    post.id,
-                                                                )
-                                                            }
-                                                            className="shrink-0 px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition cursor-pointer"
-                                                        >
-                                                            Claim & Verify (
-                                                            {post.claims.length}
-                                                            )
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                            {/* Configurable Contact Matrix & Conditional Map Pin */}
-                                            <ContactMatrix
-                                                contactConfig={
-                                                    post.contact_config
-                                                }
-                                                campusHub={post.campus_hub}
-                                                roomDetail={post.room_detail}
-                                                lat={post.lat}
-                                                lng={post.lng}
-                                                isLockedForVerification={
-                                                    requiresVerification
-                                                }
-                                                onOpenInAppChat={() =>
-                                                    setChatTarget({
-                                                        title: post.title,
-                                                        postId: post.id,
-                                                    })
-                                                }
-                                                compact
-                                            />
-                                        </div>
-
-                                        {/* Footer Post Management Controls */}
-                                        <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
-                                            <div className="flex items-center gap-2">
-                                                {post.linked_item_id && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-mono-tabular text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
-                                                        <Sparkles className="w-3 h-3" />{" "}
-                                                        Linked to Registered QR
-                                                        Sticker
-                                                    </span>
-                                                )}
-                                                {post.is_anonymous && (
-                                                    <span className="inline-flex items-center gap-1 text-[11px] font-mono-tabular text-amber-300/90">
-                                                        <KeyRound className="w-3 h-3" />{" "}
-                                                        Passcode Protected
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {!isResolved && (
-                                                <div className="flex items-center gap-2">
-                                                    {passcodePromptPostId ===
-                                                    post.id ? (
-                                                        <div className="flex items-center gap-1.5">
-                                                            <input
-                                                                type="text"
-                                                                value={
-                                                                    passcodeInput
-                                                                }
-                                                                onChange={(e) =>
-                                                                    setPasscodeInput(
-                                                                        e.target
-                                                                            .value,
-                                                                    )
-                                                                }
-                                                                placeholder="Passcode (e.g. PASS-7741)"
-                                                                className="px-2.5 py-1 rounded bg-radar-bg border border-white/20 text-xs text-white font-mono-tabular w-36"
-                                                            />
-                                                            <button
-                                                                onClick={() =>
-                                                                    handleConfirmPasscodeResolve(
-                                                                        post.id,
-                                                                    )
-                                                                }
-                                                                className="px-2.5 py-1 rounded bg-emerald-600 text-white text-xs font-bold cursor-pointer"
-                                                            >
-                                                                Unlock
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() =>
-                                                                handleResolvePost(
-                                                                    post,
-                                                                )
-                                                            }
-                                                            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-emerald-400 transition cursor-pointer"
-                                                        >
-                                                            <CheckCircle2 className="w-3.5 h-3.5" />
-                                                            Mark as Resolved /
-                                                            Returned
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </article>
-                                );
-                            })}
-                        </div>
-
-                        {filteredPosts.length === 0 && (
-                            <div className="radar-card rounded-2xl p-12 text-center space-y-3">
-                                <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
-                                <h3 className="text-base font-bold text-white">
-                                    No Campus Wall Posts Match Your Current
-                                    Filters
-                                </h3>
-                                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                                    Try clearing your search query or switching
-                                    the Campus Zone and Custody Role filters
-                                    back to "All".
-                                </p>
+                                        </article>
+                                    );
+                                })}
                             </div>
                         )}
-                    </>
+                    </div>
                 )}
 
-                {activeTab === "qr-studio" && (
+                {activeTab === "items" && (
                     <QrStickerStudio
-                        items={items}
+                        gear={gear}
                         currentUser={currentUser}
-                        onRegisterItem={handleRegisterItem}
                         onToggleLostMode={handleToggleLostMode}
-                        onSimulateScan={(item) => {
-                            setSimulatedScanItem(item);
-                            setActiveTab("scan-sim");
+                        onRegisterGear={handleRegisterGear}
+                        onPreviewScan={(tagId) => {
+                            setSelectedScanTag(tagId);
+                            setActiveTab("scan");
                         }}
                     />
                 )}
 
-                {activeTab === "scan-sim" && (
+                {activeTab === "scan" && (
                     <QrScanSimulator
-                        items={items}
-                        selectedItem={simulatedScanItem}
-                        onSelectItem={setSimulatedScanItem}
-                        onPingItemLocation={handlePingItemLocation}
-                        onOpenChatForItem={(item) =>
-                            setChatTarget({
-                                title: `QR Scan Chat: ${item.name} (${item.tag_code})`,
-                                itemId: item.id,
-                            })
-                        }
+                        gear={gear}
+                        selectedTagId={selectedScanTag}
+                        onSelectTag={(tagId) => setSelectedScanTag(tagId)}
+                        onPingTagLocation={handlePingTagLocation}
+                        onOpenTagChat={(item) => {
+                            const linkedPost =
+                                posts.find(
+                                    (p) => p.linkedQrTag === item.tagId,
+                                ) || posts[0];
+                            if (linkedPost) setChatPost(linkedPost);
+                        }}
                     />
                 )}
             </main>
 
-            {/* Modals & Drawers */}
-            <PostModal
-                isOpen={isPostModalOpen}
-                onClose={() => setIsPostModalOpen(false)}
-                currentUser={currentUser}
-                onCreatePost={handleCreatePost}
-            />
+            {/* Mobile Bottom Tab Bar (3 items) */}
+            <nav
+                aria-label="Mobile navigation"
+                className="sm:hidden fixed bottom-0 inset-x-0 h-14 bg-surface border-t border-border grid grid-cols-3 z-30"
+            >
+                <button
+                    type="button"
+                    onClick={() => setActiveTab("wall")}
+                    className={`text-xs font-medium flex items-center justify-center ${
+                        activeTab === "wall" ? "text-text" : "text-muted"
+                    }`}
+                >
+                    Wall
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab("items")}
+                    className={`text-xs font-medium flex items-center justify-center ${
+                        activeTab === "items" ? "text-text" : "text-muted"
+                    }`}
+                >
+                    My items
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab("scan")}
+                    className={`text-xs font-medium flex items-center justify-center ${
+                        activeTab === "scan" ? "text-text" : "text-muted"
+                    }`}
+                >
+                    Scan
+                </button>
+            </nav>
 
+            {/* Side Panel: Item Detail & Verification */}
             <ClaimVerifyDrawer
-                post={activeClaimPost}
-                onClose={() => setActiveClaimPostId(null)}
+                post={selectedPost}
                 currentUser={currentUser}
+                isVerified={
+                    selectedPost
+                        ? verifiedPostIds.includes(selectedPost.id)
+                        : false
+                }
+                onClose={() => setSelectedPost(null)}
                 onSubmitClaim={handleSubmitClaim}
                 onReviewClaim={handleReviewClaim}
+                onResolvePost={handleResolvePost}
+                onDeletePost={handleDeletePost}
+                onOpenChat={(post) => {
+                    setSelectedPost(null);
+                    setChatPost(post);
+                }}
+                onJumpToQrTag={(tagId) => {
+                    setSelectedPost(null);
+                    setSelectedScanTag(tagId);
+                    setActiveTab("scan");
+                }}
             />
 
+            {/* In-App Campus Chat Drawer */}
             <ChatDrawer
-                isOpen={Boolean(chatTarget)}
-                onClose={() => setChatTarget(null)}
-                targetTitle={chatTarget?.title || ""}
-                postId={chatTarget?.postId}
-                itemId={chatTarget?.itemId}
-                messages={activeChatMessages}
+                post={chatPost}
                 currentUser={currentUser}
-                onSendMessage={handleSendMessage}
+                onClose={() => setChatPost(null)}
+            />
+
+            {/* Post Modal */}
+            <PostModal
+                isOpen={isPostModalOpen}
+                currentUser={currentUser}
+                registeredGear={gear}
+                onClose={() => setIsPostModalOpen(false)}
+                onCreatePost={handleCreatePost}
             />
         </div>
     );
