@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { L, maplibregl } from "../lib/setupMaplibre";
+import { L, maplibregl } from "../lib/setupMapLibre";
 import "@maplibre/maplibre-gl-leaflet";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { Crosshair, X, ArrowUpRight } from "lucide-react";
