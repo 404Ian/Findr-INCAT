@@ -1,9 +1,9 @@
 import type { ChatMessage, ClaimAttempt, PostItem, QrGearItem } from "../types";
 
-const POSTS_KEY = "findr_posts_v2";
-const GEAR_KEY = "findr_gear_v2";
-const CHATS_KEY = "findr_chats_v2";
-const VERIFIED_KEY = "findr_verified_posts_v2";
+const POSTS_KEY = "campusradar_posts_v3";
+const GEAR_KEY = "campusradar_gear_v3";
+const CHATS_KEY = "campusradar_chats_v3";
+const VERIFIED_KEY = "campusradar_verified_posts_v3";
 
 const INITIAL_POSTS: PostItem[] = [
     {
@@ -15,10 +15,10 @@ const INITIAL_POSTS: PostItem[] = [
         description:
             "Turned in by a junior high student who found it near the Canteen washing area during lunch break. Currently locked safely in the Guidance Office drawer.",
         hubId: "guidance",
-        locationDetail: "Admin Bldg Room 102 — Ask for Ms. Santos",
+        locationDetail: "Admin Building Room 102 — Ask for Ms. Santos",
         posterName: "Ms. Clara Santos",
         posterRole: "OFFICE",
-        posterDept: "Guidance Office • ADM-102",
+        posterDept: "Guidance Office · ADM-102",
         verificationQuestion:
             "To prove ownership: Name the exact ID card inside the clear window slot and the two keychains attached to the zipper.",
         expectedAnswerHint: "national id",
@@ -46,9 +46,9 @@ const INITIAL_POSTS: PostItem[] = [
         title: "Obsidian Black 40oz AquaFlask (QR Tag #CR-AQUA-40OZ)",
         category: "Tumblers & Flasks",
         description:
-            "Accidentally left my matte black 40oz AquaFlask on the 2nd row bleachers of the Covered Gym after PE. It has a Findr QR sticker on the side and a Robotics Club decal.",
+            "Left my matte black 40oz AquaFlask on the 2nd row bleachers of the Covered Gym after PE. Has a CampusRadar QR sticker on the side and a Robotics Club decal.",
         hubId: "gymnasium",
-        locationDetail: "Bleachers Section B / Drop off at Guard House",
+        locationDetail: "Bleachers Section B / Drop off at Main Gate",
         posterName: "Ian Dela Cruz",
         posterRole: "STUDENT",
         posterDept: "Grade 12 - STEM A",
@@ -69,8 +69,8 @@ const INITIAL_POSTS: PostItem[] = [
         category: "Phones & Gadgets",
         description:
             "Left behind at Workstation #14 in Computer Lab 2 after the Grade 11 Programming class. Held safely at the ICT Faculty Desk.",
-        hubId: "computer-lab",
-        locationDetail: "ICT Bldg Room 202 — Faculty Cubicle 4",
+        hubId: "ict-building",
+        locationDetail: "ICT Building Room 202 — Faculty Cubicle 4",
         posterName: "Engr. Marco Reyes",
         posterRole: "FACULTY",
         posterDept: "Mathematics & Robotics Dept",
@@ -91,7 +91,7 @@ const INITIAL_POSTS: PostItem[] = [
         title: "Casio fx-570ES Plus Calculator",
         category: "Calculators",
         description:
-            "Found this scientific calculator on the 3rd floor Library study carrel #9. I handed it directly to the Main Gate Guard House logbook desk on my way home.",
+            "Found this scientific calculator on the Library study carrel #9. Handed directly to the Main Gate Guard House logbook desk on my way home.",
         hubId: "guard-house",
         locationDetail:
             "Turned in to Officer Bautista at Main Gate Guard House",
@@ -119,9 +119,9 @@ const INITIAL_GEAR: QrGearItem[] = [
         ownerSection: "Grade 12 - STEM A",
         preferredHubId: "ssg-office",
         handoverNote:
-            "Has a small scratch near the SOLAR logo. Needed urgently for Calculus exam! Please drop off at SSG Office or message me on Messenger.",
+            "Has a small scratch near the SOLAR logo. Needed urgently for Calculus exam. Please drop off at SSG Office or message me on Messenger.",
         status: "SAFE",
-        lastPingLocation: "Main Library — Table 4",
+        lastPingLocation: "Library / Social Hall — Table 4",
         lastPingTime: "Today, 10:42 AM",
         contactChannels: {
             inAppChat: true,
@@ -137,7 +137,7 @@ const INITIAL_GEAR: QrGearItem[] = [
         ownerSection: "Grade 12 - STEM A",
         preferredHubId: "guard-house",
         handoverNote:
-            "Left near the Gymnasium bleachers after 3rd period PE class. Has a Robotics Club holographic sticker near the base.",
+            "Left near the Gymnasium bleachers after 3rd period PE class. Has a Robotics Club sticker near the base.",
         status: "LOST",
         lastPingLocation: "Main Gate / Guard House — Security Desk",
         lastPingTime: "Just now",
@@ -155,7 +155,7 @@ const INITIAL_GEAR: QrGearItem[] = [
         ownerSection: "Grade 12 - STEM A",
         preferredHubId: "guard-house",
         handoverNote:
-            "Contains my school RFID pass and a silver 64GB Kingston flash drive. Please return to the Guard House or ping me!",
+            "Contains my school RFID pass and a silver 64GB Kingston flash drive. Please return to the Guard House or ping me.",
         status: "SAFE",
         contactChannels: {
             inAppChat: true,

@@ -46,6 +46,7 @@ export interface PostItem {
     linkedQrTag?: string;
     passcode?: string;
     createdAt: string;
+    returnedAt?: string;
     contactChannels: ContactChannels;
     claims: ClaimAttempt[];
 }
@@ -59,6 +60,7 @@ export interface QrGearItem {
     preferredHubId: string;
     handoverNote: string;
     status: "SAFE" | "LOST";
+    photoUrl?: string;
     lastPingLocation?: string;
     lastPingTime?: string;
     contactChannels: ContactChannels;
