@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+// Expose maplibregl on window for @maplibre/maplibre-gl-leaflet compatibility
+if (typeof window !== "undefined") {
+    (window as unknown as { maplibregl: typeof maplibregl }).maplibregl =
+        maplibregl;
+}
+import "@maplibre/maplibre-gl-leaflet";
+
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { Crosshair, X, ArrowUpRight } from "lucide-react";
 import {
@@ -10,6 +20,10 @@ import {
     getHubById,
 } from "../data/hubs";
 import type { PostItem } from "../types";
+
+interface MaplibreGLLayer extends L.Layer {
+    getMaplibreMap(): maplibregl.Map;
+}
 
 interface CampusMapProps {
     isOpen: boolean;
@@ -22,10 +36,41 @@ interface CampusMapProps {
     onOpenPostDetail: (post: PostItem) => void;
 }
 
-const LIGHT_TILES =
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const DARK_TILES =
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const OPENFREEMAP_LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron";
+const OPENFREEMAP_DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+const OPENFREEMAP_DARK_FALLBACK_STYLE =
+    "https://tiles.openfreemap.org/styles/fiord";
+
+const ESRI_LIGHT_GRAY_RASTER =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+
+const OPENFREEMAP_ATTRIBUTION =
+    '<a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
+
+function canUseWebGL(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+        const canvas = document.createElement("canvas");
+        return Boolean(
+            window.WebGLRenderingContext &&
+            (canvas.getContext("webgl2") ||
+                canvas.getContext("webgl") ||
+                canvas.getContext("experimental-webgl")),
+        );
+    } catch {
+        return false;
+    }
+}
+
+async function resolveDarkStyleUrl(): Promise<string> {
+    try {
+        const res = await fetch(OPENFREEMAP_DARK_STYLE, { method: "HEAD" });
+        if (res.ok) return OPENFREEMAP_DARK_STYLE;
+    } catch {
+        // Fall through to fiord backup style
+    }
+    return OPENFREEMAP_DARK_FALLBACK_STYLE;
+}
 
 export const CampusMap: React.FC<CampusMapProps> = ({
     isOpen,
@@ -40,12 +85,13 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     const prefersReducedMotion = useReducedMotion();
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
-    const tileLayerRef = useRef<L.TileLayer | null>(null);
+    const glLayerRef = useRef<MaplibreGLLayer | null>(null);
+    const fallbackRasterRef = useRef<L.TileLayer | null>(null);
     const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
     const [popoverPost, setPopoverPost] = useState<PostItem | null>(null);
 
-    // Initialize Leaflet map inside INCAT bounds when opened
+    // Mount Leaflet map with explicit minZoom/maxZoom and OpenFreeMap MapLibre layer
     useEffect(() => {
         if (!isOpen || !mapContainerRef.current || mapInstanceRef.current)
             return;
@@ -61,33 +107,117 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             attributionControl: true,
         });
 
-        const tileLayer = L.tileLayer(darkMode ? DARK_TILES : LIGHT_TILES, {
-            maxZoom: 20,
-            subdomains: "abcd",
-            attribution: "&copy; OpenStreetMap &copy; CARTO",
-        }).addTo(map);
+        map.attributionControl.setPrefix(false);
+        map.attributionControl.addAttribution(OPENFREEMAP_ATTRIBUTION);
 
-        tileLayerRef.current = tileLayer;
+        const mountEsriFallback = () => {
+            if (fallbackRasterRef.current || !mapInstanceRef.current) return;
+            if (glLayerRef.current) {
+                try {
+                    mapInstanceRef.current.removeLayer(glLayerRef.current);
+                } catch {
+                    // Ignore removal error
+                }
+                glLayerRef.current = null;
+            }
+            fallbackRasterRef.current = L.tileLayer(ESRI_LIGHT_GRAY_RASTER, {
+                minZoom: 16,
+                maxZoom: 20,
+                maxNativeZoom: 16,
+                attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
+            }).addTo(mapInstanceRef.current);
+        };
+
+        const leafletWithGL = L as unknown as {
+            maplibreGL?: (options: {
+                style: string;
+                attributionControl?: boolean;
+            }) => MaplibreGLLayer;
+        };
+
+        if (canUseWebGL() && typeof leafletWithGL.maplibreGL === "function") {
+            try {
+                const initialStyle = darkMode
+                    ? OPENFREEMAP_DARK_STYLE
+                    : OPENFREEMAP_LIGHT_STYLE;
+
+                const glLayer = leafletWithGL
+                    .maplibreGL({
+                        style: initialStyle,
+                        attributionControl: false,
+                    })
+                    .addTo(map);
+
+                glLayerRef.current = glLayer;
+
+                const glMap = glLayer.getMaplibreMap();
+                if (glMap) {
+                    glMap.on(
+                        "error",
+                        (err) => {
+                            const status = (
+                                err.error as { status?: number } | undefined
+                            )?.status;
+                            // If dark style URL 404s, try fiord before falling back to raster
+                            if (darkMode && status === 404) {
+                                glMap.setStyle(OPENFREEMAP_DARK_FALLBACK_STYLE);
+                                return;
+                            }
+                            if (!glMap.isStyleLoaded()) {
+                                mountEsriFallback();
+                            }
+                        },
+                    );
+                }
+            } catch {
+                mountEsriFallback();
+            }
+        } else {
+            mountEsriFallback();
+        }
+
         markersLayerRef.current = L.layerGroup().addTo(map);
         mapInstanceRef.current = map;
 
         const invalidateTimer = setTimeout(() => {
             map.invalidateSize();
+            const glMap = glLayerRef.current?.getMaplibreMap();
+            if (glMap) glMap.resize();
         }, 320);
 
         return () => {
             clearTimeout(invalidateTimer);
             map.remove();
             mapInstanceRef.current = null;
-            tileLayerRef.current = null;
+            glLayerRef.current = null;
+            fallbackRasterRef.current = null;
             markersLayerRef.current = null;
         };
     }, [isOpen]);
 
-    // Switch CARTO Positron / Dark Matter tiles with theme
+    // Switch OpenFreeMap style in place on theme toggle without removing the layer
     useEffect(() => {
-        if (!tileLayerRef.current) return;
-        tileLayerRef.current.setUrl(darkMode ? DARK_TILES : LIGHT_TILES);
+        const glLayer = glLayerRef.current;
+        if (!glLayer) return;
+
+        const glMap = glLayer.getMaplibreMap();
+        if (!glMap) return;
+
+        let cancelled = false;
+
+        if (darkMode) {
+            resolveDarkStyleUrl().then((darkUrl) => {
+                if (!cancelled && glLayerRef.current) {
+                    glMap.setStyle(darkUrl);
+                }
+            });
+        } else {
+            glMap.setStyle(OPENFREEMAP_LIGHT_STYLE);
+        }
+
+        return () => {
+            cancelled = true;
+        };
     }, [darkMode]);
 
     // Render custom 10px divIcon pins with staggered drop-in and 1.3x selected spring scale
@@ -97,7 +227,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 
         layerGroup.clearLayers();
 
-        // 1. Campus Drop-off Hub Dots (Green #234B38)
+        // 1. Campus Drop-off Hub Dots (INCAT Green #234B38)
         CAMPUS_HUBS.forEach((hub, idx) => {
             const isSelected = selectedHubId === hub.id;
             const delayMs = prefersReducedMotion ? 0 : Math.min(idx * 25, 180);
@@ -124,7 +254,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             marker.addTo(layerGroup);
         });
 
-        // 2. Active Lost/Found Item Dots (Red = Lost, Amber/Warm Yellow = Found)
+        // 2. Active Lost/Found Item Dots (Red = Lost, Amber = Found)
         posts
             .filter((p) => p.status === "OPEN")
             .forEach((post, idx) => {
