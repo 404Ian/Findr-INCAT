@@ -178,17 +178,17 @@ export function App() {
 
     // Theme state (default: LIGHT)
     const [darkMode, setDarkMode] = useState<boolean>(() => {
-        return localStorage.getItem("campusradar_theme") === "dark";
+        return localStorage.getItem("findr_theme") === "dark";
     });
 
     useEffect(() => {
         const root = document.documentElement;
         if (darkMode) {
             root.classList.add("dark");
-            localStorage.setItem("campusradar_theme", "dark");
+            localStorage.setItem("findr_theme", "dark");
         } else {
             root.classList.remove("dark");
-            localStorage.setItem("campusradar_theme", "light");
+            localStorage.setItem("findr_theme", "light");
         }
     }, [darkMode]);
 
@@ -531,7 +531,7 @@ export function App() {
                         onClick={() => setActiveTab("wall")}
                         className="text-base font-semibold tracking-tight text-text hover:opacity-80 transition-opacity duration-150"
                     >
-                        CampusRadar
+                        Findr
                     </button>
 
                     {/* Center: Three plain text tabs with sliding layoutId underline */}

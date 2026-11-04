@@ -99,7 +99,7 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
                     {/* Minimal Browser Address Bar */}
                     <div className="px-5 py-3 border-b border-border flex items-center justify-between text-xs text-muted bg-subtle/40">
                         <span className="font-mono truncate">
-                            campusradar.edu/scan/{activeItem.tagId}
+                            findr-incat.ph/scan/{activeItem.tagId}
                         </span>
                         <span className="inline-flex items-center gap-1.5 shrink-0">
                             <span

@@ -1,9 +1,9 @@
 import type { ChatMessage, ClaimAttempt, PostItem, QrGearItem } from "../types";
 
-const POSTS_KEY = "campusradar_posts_v3";
-const GEAR_KEY = "campusradar_gear_v3";
-const CHATS_KEY = "campusradar_chats_v3";
-const VERIFIED_KEY = "campusradar_verified_posts_v3";
+const POSTS_KEY = "findr_posts_v3";
+const GEAR_KEY = "findr_gear_v3";
+const CHATS_KEY = "findr_chats_v3";
+const VERIFIED_KEY = "findr_verified_posts_v3";
 
 const INITIAL_POSTS: PostItem[] = [
     {

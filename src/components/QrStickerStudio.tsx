@@ -75,7 +75,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 handoverNote.trim() ||
                 `Please drop off at ${
                     getHubById(preferredHubId).name
-                } or message me on CampusRadar.`,
+                } or message me on Findr INCAT.`,
             status: "SAFE",
             photoUrl: photoUrl || undefined,
             contactChannels: {

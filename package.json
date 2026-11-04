@@ -12,8 +12,10 @@
         "d1:init": "wrangler d1 execute finder-db --local --file=./schema.sql"
     },
     "dependencies": {
+        "@maplibre/maplibre-gl-leaflet": "^0.1.4",
         "leaflet": "^1.9.4",
         "lucide-react": "^1.16.0",
+        "maplibre-gl": "^6.16.0",
         "motion": "^14.9.1",
         "qrcode.react": "^4.2.0",
         "react": "^19.3.1",
