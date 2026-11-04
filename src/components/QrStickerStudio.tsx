@@ -1,500 +1,518 @@
 import React, { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import {
-    Printer,
-    Plus,
-    Radio,
-    ShieldCheck,
-    Smartphone,
-    QrCode,
-    Tag,
-    Scissors,
-} from "lucide-react";
-import type {
-    CampusHubName,
-    ItemCategory,
-    RegisteredItem,
-    StickerFormat,
-    UserProfile,
-} from "../types";
-import { CAMPUS_HUBS, ITEM_CATEGORIES } from "../data/hubs";
+import { Plus, Printer, X, ArrowUpRight } from "lucide-react";
+import { CAMPUS_HUBS, ITEM_CATEGORIES, getHubById } from "../data/hubs";
+import type { DemoUser, QrGearItem } from "../types";
 
 interface QrStickerStudioProps {
-    items: RegisteredItem[];
-    currentUser: UserProfile;
-    onRegisterItem: (item: RegisteredItem) => void;
-    onToggleLostMode: (item: RegisteredItem) => void;
-    onSimulateScan: (item: RegisteredItem) => void;
+    gear: QrGearItem[];
+    currentUser: DemoUser;
+    onToggleLostMode: (tagId: string) => void;
+    onRegisterGear: (item: QrGearItem) => void;
+    onPreviewScan: (tagId: string) => void;
 }
 
+type StickerTemplateSize = "micro" | "standard" | "id-card";
+
 export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
-    items,
+    gear,
     currentUser,
-    onRegisterItem,
     onToggleLostMode,
-    onSimulateScan,
+    onRegisterGear,
+    onPreviewScan,
 }) => {
-    const [stickerFormat, setStickerFormat] =
-        useState<StickerFormat>("standard-square");
-    const [showNewForm, setShowNewForm] = useState(false);
+    const [isStickerModalOpen, setIsStickerModalOpen] = useState(false);
+    const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+    const [templateSize, setTemplateSize] =
+        useState<StickerTemplateSize>("standard");
 
+    // New item registration state
     const [name, setName] = useState("");
-    const [category, setCategory] = useState<ItemCategory>("Calculators");
-    const [customNote, setCustomNote] = useState(
-        "If found on campus, please drop off at the SSG Office or message me on Messenger!",
-    );
-    const [meetupHub, setMeetupHub] = useState<CampusHubName>(
-        "SSG / Student Council Office",
-    );
-    const [meetupRoom, setMeetupRoom] = useState("STEM Building Room 304");
-    const [fbMessenger, setFbMessenger] = useState(
-        "https://m.me/iandelacruz.stem",
-    );
-    const [smsNumber, setSmsNumber] = useState("+639175550192");
+    const [category, setCategory] = useState(ITEM_CATEGORIES[0]);
+    const [preferredHubId, setPreferredHubId] = useState("guard-house");
+    const [handoverNote, setHandoverNote] = useState("");
+    const [nameError, setNameError] = useState("");
 
-    const handleCreateGear = (e: React.FormEvent) => {
+    const handleRegisterSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name.trim()) return;
-        const hubPreset =
-            CAMPUS_HUBS.find((h) => h.name === meetupHub) || CAMPUS_HUBS[0];
-        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-        const newItem: RegisteredItem = {
-            id: `item-${Date.now()}`,
-            user_id: currentUser.id,
-            owner_name: currentUser.name,
-            owner_role: currentUser.role,
-            owner_dept: currentUser.department_or_section,
-            tag_code: `CR-${randomSuffix}`,
+        if (!name.trim()) {
+            setNameError("Please enter the item name.");
+            return;
+        }
+
+        const suffix = Math.floor(1000 + Math.random() * 9000);
+        const prefix = category
+            .slice(0, 4)
+            .toUpperCase()
+            .replace(/[^A-Z]/g, "ITEM");
+        const newTagId = `CR-${prefix}-${suffix}`;
+
+        onRegisterGear({
+            tagId: newTagId,
             name: name.trim(),
             category,
-            status: "safe",
-            custom_note: customNote.trim(),
-            contact_config: {
-                enableInAppChat: true,
-                fbMessenger: fbMessenger.trim() || undefined,
-                smsNumber: smsNumber.trim() || undefined,
-                showMapPin: true,
+            ownerName: currentUser.name,
+            ownerSection: currentUser.dept,
+            preferredHubId,
+            handoverNote:
+                handoverNote.trim() ||
+                `Please drop off at ${getHubById(preferredHubId).name} or message me on CampusRadar.`,
+            status: "SAFE",
+            contactChannels: {
+                inAppChat: true,
+                messenger: "m.me/iandelacruz.incat",
             },
-            meetup_hub: meetupHub,
-            meetup_room: meetupRoom.trim(),
-            lat: hubPreset.lat,
-            lng: hubPreset.lng,
-            created_at: new Date().toISOString(),
-        };
-        onRegisterItem(newItem);
+        });
+
         setName("");
-        setShowNewForm(false);
+        setHandoverNote("");
+        setNameError("");
+        setIsRegisterModalOpen(false);
     };
 
     return (
-        <div className="space-y-8">
-            {/* Top Studio Controls (Hidden when printing) */}
-            <div className="no-print radar-card rounded-2xl p-6 space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono-tabular uppercase px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                            <QrCode className="w-3.5 h-3.5" />{" "}
-                            High-Error-Correction Physical Gear Tags (Level H)
-                        </span>
-                        <h2 className="text-xl font-bold text-white mt-2">
-                            Student QR Locker & DIY Sticker Print Studio
-                        </h2>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                            Register your tumblers, calculators, and IDs. Toggle
-                            1-Click Lost Mode to automatically broadcast to the
-                            Campus Wall.
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-2.5">
-                        <button
-                            onClick={() => setShowNewForm(!showNewForm)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold border border-white/15 transition cursor-pointer"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Register New Campus Gear
-                        </button>
-                        <button
-                            onClick={() => window.print()}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-radar-blue hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30 transition cursor-pointer"
-                        >
-                            <Printer className="w-4 h-4" />
-                            Print Sticker Sheet (A4 / Letter)
-                        </button>
-                    </div>
+        <div className="space-y-6">
+            {/* Top Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-base font-medium text-text">
+                        My items
+                    </h1>
+                    <p className="text-sm text-muted mt-0.5">
+                        Toggle lost mode to post an alert on the wall and update
+                        your QR tag status.
+                    </p>
                 </div>
 
-                {/* Add New Registered Gear Form */}
-                {showNewForm && (
-                    <form
-                        onSubmit={handleCreateGear}
-                        className="p-5 rounded-xl bg-radar-bg border border-blue-500/30 space-y-4"
+                <div className="flex items-center gap-4">
+                    <button
+                        type="button"
+                        onClick={() => setIsStickerModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:opacity-80 transition-opacity duration-150"
                     >
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                            <Tag className="w-4 h-4 text-blue-400" /> Register
-                            Belonging & Generate QR Tag
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="sm:col-span-2">
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    Item Name & Color/Model *
-                                </label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="e.g., HydroFlask 32oz Cobalt Blue / Casio ClassWiz"
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                />
-                            </div>
+                        <Printer size={16} strokeWidth={1.5} />
+                        Print stickers
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setIsRegisterModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-accent text-accent-fg text-sm font-medium rounded-md hover:opacity-90 transition-opacity duration-150"
+                    >
+                        <Plus size={16} strokeWidth={1.5} />
+                        Register item
+                    </button>
+                </div>
+            </div>
+
+            {/* Simple Ruled Table */}
+            {gear.length === 0 ? (
+                <div className="py-12 text-center border border-border rounded-lg bg-surface text-sm text-muted">
+                    No registered items yet.{" "}
+                    <button
+                        type="button"
+                        onClick={() => setIsRegisterModalOpen(true)}
+                        className="text-accent font-medium hover:underline ml-1"
+                    >
+                        Register your first item
+                    </button>
+                </div>
+            ) : (
+                <div className="border border-border rounded-lg bg-surface overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-border text-xs text-muted bg-subtle/50">
+                                    <th className="py-3 px-6 font-normal">
+                                        Item
+                                    </th>
+                                    <th className="py-3 px-4 font-normal">
+                                        Tag ID
+                                    </th>
+                                    <th className="py-3 px-4 font-normal">
+                                        Status
+                                    </th>
+                                    <th className="py-3 px-6 font-normal text-right">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border text-sm">
+                                {gear.map((item) => {
+                                    const isLost = item.status === "LOST";
+                                    const hub = getHubById(item.preferredHubId);
+                                    return (
+                                        <tr
+                                            key={item.tagId}
+                                            className="hover:bg-subtle/40 transition-colors duration-150"
+                                        >
+                                            <td className="py-4 px-6">
+                                                <div className="font-medium text-text">
+                                                    {item.name}
+                                                </div>
+                                                <div className="text-xs text-muted mt-0.5 line-clamp-1">
+                                                    Drop-off: {hub.name}
+                                                    {item.lastPingLocation
+                                                        ? ` · Last scan: ${item.lastPingLocation} (${item.lastPingTime})`
+                                                        : ""}
+                                                </div>
+                                            </td>
+
+                                            <td className="py-4 px-4 align-middle">
+                                                <span className="font-mono text-xs text-text">
+                                                    {item.tagId}
+                                                </span>
+                                            </td>
+
+                                            <td className="py-4 px-4 align-middle">
+                                                <span className="inline-flex items-center gap-2 text-xs text-text">
+                                                    <span
+                                                        className={`w-1.5 h-1.5 rounded-full ${
+                                                            isLost
+                                                                ? "bg-lost"
+                                                                : "bg-returned"
+                                                        }`}
+                                                    />
+                                                    {isLost ? "Lost" : "Safe"}
+                                                </span>
+                                            </td>
+
+                                            <td className="py-4 px-6 align-middle text-right">
+                                                <div className="inline-flex items-center justify-end gap-5">
+                                                    <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-muted">
+                                                        <span>Lost mode</span>
+                                                        <button
+                                                            type="button"
+                                                            role="switch"
+                                                            aria-checked={
+                                                                isLost
+                                                            }
+                                                            aria-label={`Toggle lost mode for ${item.name}`}
+                                                            onClick={() =>
+                                                                onToggleLostMode(
+                                                                    item.tagId,
+                                                                )
+                                                            }
+                                                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors duration-150 ${
+                                                                isLost
+                                                                    ? "bg-lost border-lost"
+                                                                    : "bg-subtle border-border"
+                                                            }`}
+                                                        >
+                                                            <span
+                                                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-150 ${
+                                                                    isLost
+                                                                        ? "translate-x-4"
+                                                                        : "translate-x-0.5"
+                                                                }`}
+                                                            />
+                                                        </button>
+                                                    </label>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            onPreviewScan(
+                                                                item.tagId,
+                                                            )
+                                                        }
+                                                        className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:opacity-80"
+                                                    >
+                                                        Scan view
+                                                        <ArrowUpRight
+                                                            size={14}
+                                                            strokeWidth={1.5}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Print Stickers Modal */}
+            {isStickerModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/50 p-4 overflow-y-auto"
+                    onClick={() => setIsStickerModalOpen(false)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="sticker-modal-title"
+                >
+                    <div
+                        className="w-full max-w-3xl bg-surface border border-border rounded-lg p-6 shadow-popover my-8"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-4 border-b border-border">
                             <div>
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    Category
-                                </label>
-                                <select
-                                    value={category}
-                                    onChange={(e) =>
-                                        setCategory(
-                                            e.target.value as ItemCategory,
-                                        )
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
+                                <h2
+                                    id="sticker-modal-title"
+                                    className="text-base font-medium text-text"
                                 >
-                                    {ITEM_CATEGORIES.map((c) => (
-                                        <option key={c} value={c}>
-                                            {c}
-                                        </option>
-                                    ))}
-                                </select>
+                                    Print QR stickers
+                                </h2>
+                                <p className="text-xs text-muted mt-0.5">
+                                    Select a cut-guide size for calculators,
+                                    tumblers, or ID cards.
+                                </p>
                             </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    Preferred Campus Drop-Off Hub
-                                </label>
-                                <select
-                                    value={meetupHub}
-                                    onChange={(e) =>
-                                        setMeetupHub(
-                                            e.target.value as CampusHubName,
-                                        )
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                >
-                                    {CAMPUS_HUBS.map((h) => (
-                                        <option key={h.name} value={h.name}>
-                                            {h.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    Homeroom / Meetup Room Detail
-                                </label>
-                                <input
-                                    type="text"
-                                    value={meetupRoom}
-                                    onChange={(e) =>
-                                        setMeetupRoom(e.target.value)
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="sm:col-span-1">
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    FB Messenger Link
-                                </label>
-                                <input
-                                    type="text"
-                                    value={fbMessenger}
-                                    onChange={(e) =>
-                                        setFbMessenger(e.target.value)
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                />
-                            </div>
-                            <div className="sm:col-span-1">
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    SMS Contact
-                                </label>
-                                <input
-                                    type="text"
-                                    value={smsNumber}
-                                    onChange={(e) =>
-                                        setSmsNumber(e.target.value)
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                />
-                            </div>
-                            <div className="sm:col-span-1">
-                                <label className="block text-[11px] text-slate-400 mb-1">
-                                    Note Displayed When Scanned
-                                </label>
-                                <input
-                                    type="text"
-                                    value={customNote}
-                                    onChange={(e) =>
-                                        setCustomNote(e.target.value)
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg bg-radar-card border border-white/10 text-xs text-white"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2">
                             <button
                                 type="button"
-                                onClick={() => setShowNewForm(false)}
-                                className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white"
+                                onClick={() => setIsStickerModalOpen(false)}
+                                aria-label="Close modal"
+                                className="p-1 text-muted hover:text-text rounded-md"
                             >
-                                Cancel
-                            </button>
-                            <button
-                                type="submit"
-                                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
-                            >
-                                Save & Generate QR Sticker
+                                <X size={18} strokeWidth={1.5} />
                             </button>
                         </div>
-                    </form>
-                )}
 
-                {/* Registered Gear List with 1-Click Lost Mode Escalation */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {items.map((item) => {
-                        const isLost = item.status === "lost";
-                        return (
-                            <div
-                                key={item.id}
-                                className={`p-4 rounded-xl border transition flex flex-col justify-between space-y-4 ${
-                                    isLost
-                                        ? "bg-red-500/10 border-red-500/40"
-                                        : "bg-radar-bg border-white/10 hover:border-white/20"
-                                }`}
+                        <div className="my-4 flex flex-wrap items-center justify-between gap-3">
+                            <div className="inline-flex p-1 bg-subtle border border-border rounded-md">
+                                <button
+                                    type="button"
+                                    onClick={() => setTemplateSize("micro")}
+                                    className={`px-3 py-1 text-xs font-medium rounded ${
+                                        templateSize === "micro"
+                                            ? "bg-surface text-text border border-border"
+                                            : "text-muted hover:text-text"
+                                    }`}
+                                >
+                                    Calculator strip (35×15mm)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTemplateSize("standard")}
+                                    className={`px-3 py-1 text-xs font-medium rounded ${
+                                        templateSize === "standard"
+                                            ? "bg-surface text-text border border-border"
+                                            : "text-muted hover:text-text"
+                                    }`}
+                                >
+                                    Tumbler badge (45×45mm)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTemplateSize("id-card")}
+                                    className={`px-3 py-1 text-xs font-medium rounded ${
+                                        templateSize === "id-card"
+                                            ? "bg-surface text-text border border-border"
+                                            : "text-muted hover:text-text"
+                                    }`}
+                                >
+                                    ID back tag (54×85mm)
+                                </button>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => window.print()}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-accent text-accent-fg text-xs font-medium rounded-md hover:opacity-90"
                             >
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-mono-tabular text-xs font-bold px-2 py-0.5 rounded bg-white/5 text-blue-400 border border-white/10">
-                                            {item.tag_code}
-                                        </span>
-                                        <span
-                                            className={`inline-flex items-center gap-1 text-[11px] font-mono-tabular font-semibold px-2 py-0.5 rounded-full ${
-                                                isLost
-                                                    ? "bg-red-500/20 text-red-300 border border-red-500/30"
-                                                    : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                                            }`}
-                                        >
-                                            {isLost ? (
-                                                <>
-                                                    <Radio className="w-3 h-3 animate-pulse" />{" "}
-                                                    LOST MODE ACTIVE
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <ShieldCheck className="w-3 h-3" />{" "}
-                                                    SAFE IN LOCKER
-                                                </>
-                                            )}
-                                        </span>
-                                    </div>
+                                <Printer size={15} strokeWidth={1.5} />
+                                Print sheet (A4 / Letter)
+                            </button>
+                        </div>
 
-                                    <h3 className="text-sm font-bold text-white">
-                                        {item.name}
-                                    </h3>
-                                    <p className="text-xs text-slate-400 line-clamp-2">
-                                        {item.custom_note}
-                                    </p>
-
-                                    {item.last_ping_location && (
-                                        <div className="text-[11px] font-mono-tabular text-slate-300 bg-white/5 px-2.5 py-1.5 rounded-lg">
-                                            Last Radar Ping:{" "}
-                                            <span className="text-blue-400">
-                                                {item.last_ping_location}
-                                            </span>{" "}
-                                            ({item.last_ping_time})
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-2 pt-2 border-t border-white/10">
-                                    <button
-                                        onClick={() => onToggleLostMode(item)}
-                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                                            isLost
-                                                ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30"
-                                                : "bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30"
+                        <div
+                            id="printable-sticker-sheet"
+                            className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2"
+                        >
+                            {gear.map((item) => {
+                                const hub = getHubById(item.preferredHubId);
+                                const scanUrl = `${window.location.origin}/?scan=${item.tagId}`;
+                                return (
+                                    <div
+                                        key={item.tagId}
+                                        className={`border border-dashed border-border rounded-md p-4 bg-white text-stone-900 flex items-center gap-3 ${
+                                            templateSize === "id-card"
+                                                ? "flex-col text-center py-6"
+                                                : ""
                                         }`}
                                     >
-                                        {isLost
-                                            ? "Mark Found & Safe"
-                                            : "1-Click Lost Mode Alert"}
-                                    </button>
-                                    <button
-                                        onClick={() => onSimulateScan(item)}
-                                        title="Preview Mobile QR Scan Screen"
-                                        className="p-2 rounded-lg bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 transition cursor-pointer"
-                                    >
-                                        <Smartphone className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Physical Printable Sticker Sheet Customizer & Preview */}
-            <div className="radar-card rounded-2xl p-6 space-y-5 print-only-sheet">
-                <div className="no-print flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
-                    <div className="flex items-center gap-2">
-                        <Scissors className="w-4 h-4 text-blue-400" />
-                        <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono-tabular">
-                            Physical Sticker Cut-Guide Template Preview
-                        </h3>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setStickerFormat("micro-strip")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-mono-tabular transition cursor-pointer ${
-                                stickerFormat === "micro-strip"
-                                    ? "bg-blue-600 text-white font-bold"
-                                    : "bg-radar-bg text-slate-400 border border-white/10"
-                            }`}
-                        >
-                            Micro Pen/Calculator Strip (35×15mm)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setStickerFormat("standard-square")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-mono-tabular transition cursor-pointer ${
-                                stickerFormat === "standard-square"
-                                    ? "bg-blue-600 text-white font-bold"
-                                    : "bg-radar-bg text-slate-400 border border-white/10"
-                            }`}
-                        >
-                            Standard Tumbler/Gadget Badge (45×45mm)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setStickerFormat("id-card-back")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-mono-tabular transition cursor-pointer ${
-                                stickerFormat === "id-card-back"
-                                    ? "bg-blue-600 text-white font-bold"
-                                    : "bg-radar-bg text-slate-400 border border-white/10"
-                            }`}
-                        >
-                            ID Card Back Tag (54×85mm)
-                        </button>
+                                        <QRCodeSVG
+                                            value={scanUrl}
+                                            size={
+                                                templateSize === "micro"
+                                                    ? 48
+                                                    : templateSize === "id-card"
+                                                      ? 88
+                                                      : 64
+                                            }
+                                            level="H"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-mono text-xs font-medium text-stone-900">
+                                                {item.tagId}
+                                            </div>
+                                            <div className="text-xs font-medium text-stone-900 truncate mt-0.5">
+                                                {item.name}
+                                            </div>
+                                            <div className="text-xs text-stone-500 truncate">
+                                                {item.ownerName} ·{" "}
+                                                {item.ownerSection}
+                                            </div>
+                                            <div className="text-xs text-stone-500 truncate">
+                                                Return: {hub.name}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
+            )}
 
-                {/* Printable Sticker Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-                    {items.map((item) => {
-                        const scanUrl = `${window.location.origin}/?scan=${item.tag_code}`;
-
-                        if (stickerFormat === "micro-strip") {
-                            return (
-                                <div
-                                    key={item.id}
-                                    className="sticker-cut-guide bg-white text-slate-950 rounded-lg p-2.5 border-2 border-dashed border-slate-400 flex items-center gap-3 max-w-65"
-                                >
-                                    <QRCodeSVG
-                                        value={scanUrl}
-                                        size={46}
-                                        level="H"
-                                        includeMargin={false}
-                                    />
-                                    <div className="min-w-0">
-                                        <div className="font-mono-tabular text-[10px] font-extrabold uppercase tracking-tight text-slate-900">
-                                            SCAN IF FOUND • {item.tag_code}
-                                        </div>
-                                        <div className="text-[11px] font-bold truncate text-slate-900">
-                                            {item.name}
-                                        </div>
-                                        <div className="text-[9px] font-mono-tabular text-slate-600 truncate">
-                                            Drop: {item.meetup_hub}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        }
-
-                        if (stickerFormat === "id-card-back") {
-                            return (
-                                <div
-                                    key={item.id}
-                                    className="sticker-cut-guide bg-white text-slate-950 rounded-xl p-4 border-2 border-dashed border-slate-400 flex flex-col items-center text-center space-y-2.5 max-w-57.5 mx-auto"
-                                >
-                                    <div className="w-full py-1 bg-slate-900 text-white font-mono-tabular text-[10px] font-bold uppercase tracking-widest rounded">
-                                        CAMPUSRADAR RETURN TAG
-                                    </div>
-                                    <QRCodeSVG
-                                        value={scanUrl}
-                                        size={120}
-                                        level="H"
-                                        includeMargin={false}
-                                    />
-                                    <div className="font-mono-tabular text-xs font-extrabold text-slate-900">
-                                        {item.tag_code}
-                                    </div>
-                                    <div className="text-xs font-bold text-slate-900 line-clamp-1">
-                                        {item.name}
-                                    </div>
-                                    <div className="text-[10px] text-slate-700 leading-tight">
-                                        Owner:{" "}
-                                        <strong>{item.owner_name}</strong> (
-                                        {item.owner_dept})
-                                    </div>
-                                    <div className="w-full pt-1 border-t border-slate-300 text-[9px] font-mono-tabular text-slate-600">
-                                        Drop Off: {item.meetup_hub}
-                                    </div>
-                                </div>
-                            );
-                        }
-
-                        // Default: Standard Square Tumbler/Gadget Badge (45x45mm)
-                        return (
-                            <div
-                                key={item.id}
-                                className="sticker-cut-guide bg-white text-slate-950 rounded-xl p-3.5 border-2 border-dashed border-slate-400 flex items-center gap-3.5"
+            {/* Register Item Modal */}
+            {isRegisterModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/50 p-4"
+                    onClick={() => setIsRegisterModalOpen(false)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="register-gear-title"
+                >
+                    <div
+                        className="w-full max-w-md bg-surface border border-border rounded-lg p-6 shadow-popover"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-4 border-b border-border">
+                            <h2
+                                id="register-gear-title"
+                                className="text-base font-medium text-text"
                             >
-                                <div className="p-1.5 bg-white border border-slate-200 rounded-lg shrink-0">
-                                    <QRCodeSVG
-                                        value={scanUrl}
-                                        size={78}
-                                        level="H"
-                                        includeMargin={false}
-                                    />
+                                Register item
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setIsRegisterModalOpen(false)}
+                                aria-label="Close modal"
+                                className="p-1 text-muted hover:text-text rounded-md"
+                            >
+                                <X size={18} strokeWidth={1.5} />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={handleRegisterSubmit}
+                            className="mt-4 space-y-4"
+                            noValidate
+                        >
+                            <div>
+                                <label
+                                    htmlFor="gear-name"
+                                    className="block text-xs text-muted mb-1"
+                                >
+                                    Item name
+                                </label>
+                                <input
+                                    id="gear-name"
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="e.g. Graphing Calculator or Black HydroFlask"
+                                    className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-md text-text"
+                                />
+                                {nameError && (
+                                    <p className="text-xs text-lost mt-1">
+                                        {nameError}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label
+                                        htmlFor="gear-cat"
+                                        className="block text-xs text-muted mb-1"
+                                    >
+                                        Category
+                                    </label>
+                                    <select
+                                        id="gear-cat"
+                                        value={category}
+                                        onChange={(e) =>
+                                            setCategory(e.target.value)
+                                        }
+                                        className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-md text-text"
+                                    >
+                                        {ITEM_CATEGORIES.map((c) => (
+                                            <option key={c} value={c}>
+                                                {c}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
-                                <div className="space-y-1 min-w-0">
-                                    <span className="inline-block px-1.5 py-0.5 rounded bg-slate-900 text-white font-mono-tabular text-[9px] font-bold uppercase">
-                                        SCAN TO RETURN • {item.tag_code}
-                                    </span>
-                                    <div className="text-xs font-extrabold text-slate-900 truncate">
-                                        {item.name}
-                                    </div>
-                                    <div className="text-[10px] text-slate-700 font-medium truncate">
-                                        {item.owner_name} • {item.owner_dept}
-                                    </div>
-                                    <div className="text-[10px] font-mono-tabular text-slate-600 truncate">
-                                        Hub: {item.meetup_hub}
-                                    </div>
+
+                                <div>
+                                    <label
+                                        htmlFor="gear-hub"
+                                        className="block text-xs text-muted mb-1"
+                                    >
+                                        Preferred drop-off hub
+                                    </label>
+                                    <select
+                                        id="gear-hub"
+                                        value={preferredHubId}
+                                        onChange={(e) =>
+                                            setPreferredHubId(e.target.value)
+                                        }
+                                        className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-md text-text"
+                                    >
+                                        {CAMPUS_HUBS.map((h) => (
+                                            <option key={h.id} value={h.id}>
+                                                {h.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
-                        );
-                    })}
+
+                            <div>
+                                <label
+                                    htmlFor="gear-note"
+                                    className="block text-xs text-muted mb-1"
+                                >
+                                    Handover note for finder
+                                </label>
+                                <textarea
+                                    id="gear-note"
+                                    rows={2}
+                                    value={handoverNote}
+                                    onChange={(e) =>
+                                        setHandoverNote(e.target.value)
+                                    }
+                                    placeholder="Any distinguishing marks or instructions..."
+                                    className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-md text-text"
+                                />
+                            </div>
+
+                            <div className="pt-3 border-t border-border flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setIsRegisterModalOpen(false)
+                                    }
+                                    className="px-3 py-1.5 text-sm text-muted hover:text-text"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-1.5 bg-accent text-accent-fg text-sm font-medium rounded-md"
+                                >
+                                    Save item
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
