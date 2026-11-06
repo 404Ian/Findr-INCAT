@@ -5,12 +5,67 @@ import {
     CupSoda,
     Calculator,
     IdCard,
+    Package,
+    CreditCard,
     Briefcase,
     KeyRound,
+    Umbrella,
     BookOpen,
+    Wrench,
     Check,
 } from "lucide-react";
-import type { PostStatus, PostType } from "../types";
+import type { ItemCategory, PostStatus, PostType } from "../types";
+
+export interface CategoryArtProps {
+    category?: ItemCategory | string;
+    className?: string;
+}
+
+export const CategoryArt: React.FC<CategoryArtProps> = ({
+    category = "other",
+    className = "h-8 w-8 text-emerald-400",
+}) => {
+    const normalized = String(category).toLowerCase();
+
+    if (normalized.includes("wallet") || normalized.includes("cash")) {
+        return <Wallet className={className} />;
+    }
+    if (normalized.includes("id") || normalized.includes("card")) {
+        return <CreditCard className={className} />;
+    }
+    if (normalized.includes("calc")) {
+        return <Calculator className={className} />;
+    }
+    if (
+        normalized.includes("electr") ||
+        normalized.includes("phone") ||
+        normalized.includes("gadget")
+    ) {
+        return <Smartphone className={className} />;
+    }
+    if (normalized.includes("tumbler") || normalized.includes("container")) {
+        return <CupSoda className={className} />;
+    }
+    if (normalized.includes("key") || normalized.includes("lanyard")) {
+        return <KeyRound className={className} />;
+    }
+    if (normalized.includes("bag") || normalized.includes("pouch")) {
+        return <Briefcase className={className} />;
+    }
+    if (normalized.includes("book") || normalized.includes("note")) {
+        return <BookOpen className={className} />;
+    }
+    if (normalized.includes("apparel") || normalized.includes("umbrella")) {
+        return <Umbrella className={className} />;
+    }
+    if (normalized.includes("tool") || normalized.includes("shop")) {
+        return <Wrench className={className} />;
+    }
+
+    return <Package className={className} />;
+};
+
+export default CategoryArt;
 
 /**
  * Client-side canvas image compressor (resizes to max 900px, JPEG 0.78 quality)

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from "react";
-import * as QRCode from "qrcode";
 import {
     AlertTriangle,
     BellRing,
@@ -32,6 +31,7 @@ import {
     removeCapabilityItem,
     setStoredCampusCode,
 } from "../lib/keys";
+import { renderQrToDataUrl, renderQrToSvgString } from "../lib/qrGenerator";
 import type {
     ContactConfig,
     CreateTagResponse,
@@ -44,9 +44,7 @@ import { ContactMatrix, DEFAULT_CONTACT_CONFIG } from "./ContactMatrix";
 import { PublicTagPage } from "./PublicTagPage";
 
 export interface QrStickerStudioProps {
-    /** Optional callback when user wants to preview a tag in the Scan tab */
     onPreviewTagCode?: (publicCode: string) => void;
-    /** Legacy props compatibility */
     tags?: Tag[];
     onTagsChanged?: (tags: Tag[]) => void;
 }
@@ -92,13 +90,11 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // QR SVG + PNG data URL caches keyed by publicCode
     const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
     const [qrSvgStrings, setQrSvgStrings] = useState<Record<string, string>>(
         {},
     );
 
-    // Sticker print configuration
     const [stickerSize, setStickerSize] = useState<"small" | "medium">(
         "medium",
     );
@@ -106,7 +102,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         new Set(),
     );
 
-    // Create Tag Modal / Drawer state
     const [createOpen, setCreateOpen] = useState(false);
     const [label, setLabel] = useState("");
     const [itemType, setItemType] = useState<ItemCategory>("calculators");
@@ -122,17 +117,14 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         useState<CreateTagResponse | null>(null);
     const [copiedReceipt, setCopiedReceipt] = useState(false);
 
-    // Recovery import / paste link state
     const [recoveryInput, setRecoveryInput] = useState("");
     const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
-    // Active Tag Messages & Scan Log Drawer
     const [inboxTag, setInboxTag] = useState<Tag | null>(null);
     const [inboxMessages, setInboxMessages] = useState<TagMessage[]>([]);
     const [inboxScans, setInboxScans] = useState<ScanEvent[]>([]);
     const [inboxLoading, setInboxLoading] = useState(false);
 
-    // Live Finder Page Preview Modal
     const [previewPublicCode, setPreviewPublicCode] = useState<string | null>(
         null,
     );
@@ -147,7 +139,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setSelectedTagIds(
                 new Set(tags.filter((t) => !t.revokedAt).map((t) => t.id)),
             );
-        } catch (err) {
+        } catch (err: unknown) {
             setError(
                 err instanceof Error
                     ? err.message
@@ -162,7 +154,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         void loadTags();
     }, [loadTags]);
 
-    // Generate QR PNG data URLs and SVG strings for every tag's public URL
     useEffect(() => {
         let active = true;
         async function generateAllQrs() {
@@ -172,23 +163,16 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             for (const t of myTags) {
                 const url = getTagPublicUrl(t.publicCode);
                 try {
-                    nextPng[t.publicCode] = await QRCode.toDataURL(url, {
-                        width: 360,
-                        margin: 1,
-                        errorCorrectionLevel: "M",
-                        color: {
-                            dark: "#052e16",
-                            light: "#ffffff",
-                        },
+                    nextSvg[t.publicCode] = renderQrToSvgString(url, {
+                        dark: "#052e16",
+                        light: "#ffffff",
+                        margin: 2,
                     });
-                    nextSvg[t.publicCode] = await QRCode.toString(url, {
-                        type: "svg",
-                        margin: 1,
-                        errorCorrectionLevel: "M",
-                        color: {
-                            dark: "#052e16",
-                            light: "#ffffff",
-                        },
+                    nextPng[t.publicCode] = await renderQrToDataUrl(url, {
+                        width: 360,
+                        dark: "#052e16",
+                        light: "#ffffff",
+                        margin: 2,
                     });
                 } catch {
                     // Ignore individual QR generation errors
@@ -247,7 +231,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setLabel("");
             setPhotoFile(null);
             await loadTags();
-        } catch (err) {
+        } catch (err: unknown) {
             if (
                 err instanceof ApiError &&
                 err.code === "CAMPUS_CODE_REQUIRED"
@@ -288,7 +272,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
-        } catch (err) {
+        } catch (err: unknown) {
             alert(
                 err instanceof Error
                     ? err.message
@@ -310,7 +294,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
-        } catch (err) {
+        } catch (err: unknown) {
             alert(
                 err instanceof Error
                     ? err.message
@@ -328,7 +312,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
-        } catch (err) {
+        } catch (err: unknown) {
             alert(
                 err instanceof Error
                     ? err.message
@@ -349,7 +333,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             await api.deleteTag(tag.id);
             removeCapabilityItem(tag.id);
             setMyTags((prev) => prev.filter((t) => t.id !== tag.id));
-        } catch (err) {
+        } catch (err: unknown) {
             alert(err instanceof Error ? err.message : "Failed to delete tag.");
         }
     };
@@ -363,13 +347,12 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             );
             setInboxMessages(messages);
             setInboxScans(scans);
-            // Clear unread badge locally
             setMyTags((prev) =>
                 prev.map((t) =>
                     t.id === tag.id ? { ...t, unreadMessageCount: 0 } : t,
                 ),
             );
-        } catch (err) {
+        } catch (err: unknown) {
             alert(
                 err instanceof Error ? err.message : "Failed to load messages.",
             );
@@ -384,7 +367,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         if (!raw) return;
         setRecoveryNotice(null);
 
-        // Extract key if user pasted full URL like https://myfindr.pages.dev/manage/abc123...
         const match = raw.match(/\/manage\/([A-Za-z0-9_-]+)/);
         const extractedKey = match ? match[1] : raw;
 
@@ -395,7 +377,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 `Restored ${restored.kind.toUpperCase()}: "${restored.label}" to this device!`,
             );
             await loadTags();
-        } catch (err) {
+        } catch (err: unknown) {
             setRecoveryNotice(
                 err instanceof Error
                     ? err.message
@@ -416,7 +398,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 `Imported ${items.length} capability key(s) into this browser.`,
             );
             await loadTags();
-        } catch (err) {
+        } catch (err: unknown) {
             setRecoveryNotice(
                 err instanceof Error
                     ? err.message
@@ -458,9 +440,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* Screen-Only Controls & Tag Management */}
             <div className="no-print space-y-6">
-                {/* Top Header + Create Tag CTA */}
                 <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
                     <div>
                         <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
@@ -510,7 +490,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                     </div>
                 </div>
 
-                {/* Device Capability Vault & Recovery Bar */}
                 <div className="rounded-2xl border border-neutral-800/90 bg-neutral-900/40 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 text-xs">
@@ -552,7 +531,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                         </div>
                     </div>
 
-                    {/* Paste /manage/:key link or raw capability key */}
                     <form
                         onSubmit={handleRestoreFromKeyOrLink}
                         className="mt-3 flex flex-wrap items-center gap-2"
@@ -585,7 +563,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                     )}
                 </div>
 
-                {/* My Tags Grid */}
                 {loading ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {[1, 2].map((n) => (
@@ -640,7 +617,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                     }`}
                                 >
                                     <div className="flex items-start gap-4">
-                                        {/* QR Preview Box */}
                                         <div className="flex shrink-0 flex-col items-center gap-1.5">
                                             <div className="h-24 w-24 overflow-hidden rounded-xl border border-neutral-700 bg-white p-1.5">
                                                 {qrPng ? (
@@ -658,7 +634,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                             </span>
                                         </div>
 
-                                        {/* Tag Metadata & Stats */}
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-1.5">
                                                 {isRevoked ? (
@@ -720,7 +695,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Tag Action Bar */}
                                     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-800/80 pt-3 text-xs">
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             <button
@@ -833,7 +807,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Print Selection Checkbox */}
                                     {!isRevoked && (
                                         <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] text-neutral-400">
                                             <input
@@ -872,7 +845,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                     </div>
                 )}
 
-                {/* Sticker Sheet Controls Bar */}
                 {printableTags.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 px-5 py-3.5 text-xs">
                         <div className="flex items-center gap-3">
@@ -917,7 +889,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 )}
             </div>
 
-            {/* PRINTABLE A4 STICKER SHEET (Visible on screen preview AND exclusively when printing) */}
             {printableTags.length > 0 && (
                 <div
                     id="findr-printable-sheet"
@@ -1013,7 +984,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 </div>
             )}
 
-            {/* CREATE TAG MODAL */}
             {createOpen && (
                 <div
                     className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
@@ -1261,7 +1231,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 </div>
             )}
 
-            {/* RELAY MESSAGES & SCAN EVENTS MODAL */}
             {inboxTag && (
                 <div
                     className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
@@ -1407,7 +1376,6 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 </div>
             )}
 
-            {/* PUBLIC FINDER PAGE PREVIEW MODAL */}
             {previewPublicCode && (
                 <div
                     className="no-print fixed inset-0 z-50 overflow-y-auto bg-black/85 p-4 backdrop-blur-sm"

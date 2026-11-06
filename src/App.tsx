@@ -17,7 +17,7 @@ import {
 } from "./data/hubs";
 import { api } from "./services/api";
 import { CampusMap } from "./components/CampusMap";
-import { ClaimVerifyDrawer } from "./components/ClaimVerifyDrawer";
+import { ClaimVerifyDrawer } from "./componets/ClaimVerifyDrawer";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { PostModal } from "./components/PostModal";
 import { QrStickerStudio } from "./components/QrStickerStudio";

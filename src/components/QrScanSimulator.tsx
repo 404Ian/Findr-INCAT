@@ -1,5 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Camera,
     CameraOff,
@@ -16,17 +15,40 @@ export interface QrScanSimulatorProps {
     onCodeResolved?: (code: string) => void;
 }
 
+interface DetectedBarcode {
+    rawValue: string;
+}
+
+interface BarcodeDetectorInstance {
+    detect(source: ImageBitmapSource): Promise<DetectedBarcode[]>;
+}
+
+interface BarcodeDetectorConstructor {
+    new (options?: { formats?: string[] }): BarcodeDetectorInstance;
+}
+
+function getNativeBarcodeDetector(): BarcodeDetectorInstance | null {
+    if (typeof window === "undefined") return null;
+    const win = window as Window & {
+        BarcodeDetector?: BarcodeDetectorConstructor;
+    };
+    if (!win.BarcodeDetector) return null;
+    try {
+        return new win.BarcodeDetector({ formats: ["qr_code"] });
+    } catch {
+        return null;
+    }
+}
+
 function extractTagCode(rawInput: string): string | null {
     const trimmed = rawInput.trim();
     if (!trimmed) return null;
 
-    // Match /t/CODE in a scanned URL
     const urlMatch = trimmed.match(/\/t\/([A-Za-z0-9_-]{6,32})/i);
     if (urlMatch) {
         return urlMatch[1].toUpperCase();
     }
 
-    // Or direct alphanumeric code (#K9M4X7P2Q8LA or K9M4X7P2Q8LA)
     const cleanCode = trimmed.replace(/^#/, "").toUpperCase();
     if (/^[A-Z0-9_-]{6,32}$/.test(cleanCode)) {
         return cleanCode;
@@ -39,8 +61,9 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
     initialCode = null,
     onCodeResolved,
 }) => {
-    const scannerRegionId = useId().replace(/:/g, "_");
-    const scannerRef = useRef<Html5Qrcode | null>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const mediaStreamRef = useRef<MediaStream | null>(null);
+    const scanTimerRef = useRef<number | null>(null);
 
     const [activeCode, setActiveCode] = useState<string | null>(
         initialCode ? extractTagCode(initialCode) : null,
@@ -57,57 +80,87 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
         }
     }, [initialCode]);
 
-    const stopCamera = async () => {
-        if (scannerRef.current) {
-            try {
-                if (scannerRef.current.isScanning) {
-                    await scannerRef.current.stop();
-                }
-                scannerRef.current.clear();
-            } catch {
-                // Ignore stop errors
+    const stopCamera = useCallback(() => {
+        if (scanTimerRef.current !== null) {
+            window.clearInterval(scanTimerRef.current);
+            scanTimerRef.current = null;
+        }
+        if (mediaStreamRef.current) {
+            for (const track of mediaStreamRef.current.getTracks()) {
+                track.stop();
             }
-            scannerRef.current = null;
+            mediaStreamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
         }
         setCameraActive(false);
-    };
+    }, []);
 
     useEffect(() => {
         return () => {
-            void stopCamera();
+            stopCamera();
         };
-    }, []);
+    }, [stopCamera]);
 
     const startCamera = async () => {
         setCameraError(null);
         setManualError(null);
 
+        if (!navigator.mediaDevices?.getUserMedia) {
+            setCameraError(
+                "Camera access requires HTTPS or localhost. Use manual tag code lookup below.",
+            );
+            return;
+        }
+
         try {
-            const instance = new Html5Qrcode(scannerRegionId);
-            scannerRef.current = instance;
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: "environment" } },
+                audio: false,
+            });
+            mediaStreamRef.current = stream;
             setCameraActive(true);
 
-            await instance.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 220, height: 220 } },
-                (decodedText) => {
-                    const code = extractTagCode(decodedText);
-                    if (code) {
-                        void stopCamera();
-                        setActiveCode(code);
-                        onCodeResolved?.(code);
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                await videoRef.current.play();
+            }
+
+            const detector = getNativeBarcodeDetector();
+            if (!detector) {
+                setCameraError(
+                    "Live camera preview active. Your browser does not expose native BarcodeDetector—type the tag code printed under the QR below.",
+                );
+                return;
+            }
+
+            scanTimerRef.current = window.setInterval(async () => {
+                const videoEl = videoRef.current;
+                if (!videoEl || videoEl.readyState < 2) return;
+                try {
+                    const results: DetectedBarcode[] =
+                        await detector.detect(videoEl);
+                    for (const item of results) {
+                        const decodedText: string = item.rawValue;
+                        const code = extractTagCode(decodedText);
+                        if (code) {
+                            stopCamera();
+                            setActiveCode(code);
+                            onCodeResolved?.(code);
+                            break;
+                        }
                     }
-                },
-                () => {
-                    // Frame without QR code; ignore
-                },
-            );
-        } catch (err) {
-            setCameraActive(false);
+                } catch {
+                    // Ignore single-frame detection errors
+                }
+            }, 250);
+        } catch (err: unknown) {
+            stopCamera();
             setCameraError(
                 err instanceof Error
                     ? err.message
-                    : "Camera permission was denied or no camera was detected on this device. Use photo scan or manual code entry below.",
+                    : "Camera permission was denied or no camera was detected on this device. Use manual code entry below.",
             );
         }
     };
@@ -120,9 +173,28 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
         setCameraError(null);
         setManualError(null);
 
+        const detector = getNativeBarcodeDetector();
+        if (!detector) {
+            setManualError(
+                "This browser does not support native image QR decoding. Please enter the 12-character tag code printed on the sticker below.",
+            );
+            e.target.value = "";
+            return;
+        }
+
         try {
-            const instance = new Html5Qrcode(scannerRegionId);
-            const decodedText = await instance.scanFile(file, false);
+            const bitmap = await createImageBitmap(file);
+            const barcodes: DetectedBarcode[] = await detector.detect(bitmap);
+            bitmap.close();
+
+            if (barcodes.length === 0) {
+                setManualError(
+                    "No QR code was detected in that photo. Try a clearer image or enter the tag code below.",
+                );
+                return;
+            }
+
+            const decodedText: string = barcodes[0].rawValue;
             const code = extractTagCode(decodedText);
             if (!code) {
                 setManualError(
@@ -130,11 +202,12 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
                 );
                 return;
             }
+
             setActiveCode(code);
             onCodeResolved?.(code);
         } catch {
             setManualError(
-                "Could not detect a valid QR code in that image. Try a clearer photo or type the tag code below.",
+                "Could not decode QR image. Enter the tag code printed on the sticker below.",
             );
         } finally {
             e.target.value = "";
@@ -151,7 +224,7 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
             );
             return;
         }
-        void stopCamera();
+        stopCamera();
         setActiveCode(code);
         onCodeResolved?.(code);
     };
@@ -167,28 +240,31 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
 
     return (
         <div className="mx-auto max-w-xl space-y-5">
-            {/* Scanner Card */}
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-xl">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                            <QrCode className="h-4 w-4" />
-                            <span>In-App QR Tag Scanner</span>
-                        </span>
-                        <h2 className="mt-1 text-lg font-bold text-neutral-100">
-                            Scan a Findr INCAT Sticker
-                        </h2>
-                        <p className="mt-0.5 text-xs text-neutral-400">
-                            Point your camera at any Findr QR tag, upload a
-                            screenshot, or enter the alphanumeric code printed
-                            on the sticker.
-                        </p>
-                    </div>
+                <div>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                        <QrCode className="h-4 w-4" />
+                        <span>In-App QR Tag Scanner</span>
+                    </span>
+                    <h2 className="mt-1 text-lg font-bold text-neutral-100">
+                        Scan a Findr INCAT Sticker
+                    </h2>
+                    <p className="mt-0.5 text-xs text-neutral-400">
+                        Point your camera at any Findr QR tag, upload a
+                        screenshot, or enter the alphanumeric code printed on
+                        the sticker.
+                    </p>
                 </div>
 
-                {/* Camera Viewport */}
                 <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
-                    <div id={scannerRegionId} className="w-full" />
+                    <video
+                        ref={videoRef}
+                        playsInline
+                        muted
+                        className={`h-64 w-full object-cover ${
+                            cameraActive ? "block" : "hidden"
+                        }`}
+                    />
 
                     {!cameraActive && (
                         <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -244,7 +320,6 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
                     </div>
                 )}
 
-                {/* Manual Tag Code Fallback */}
                 <form
                     onSubmit={handleManualSubmit}
                     className="mt-5 border-t border-neutral-800/80 pt-4"
@@ -282,7 +357,6 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
                     )}
                 </form>
 
-                {/* Quick Demo Seeded INCAT Tags for Testing */}
                 <div className="mt-4 rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-3 text-xs">
                     <div className="flex items-center gap-1.5 font-semibold text-neutral-300">
                         <Sparkles className="h-3.5 w-3.5 text-emerald-400" />

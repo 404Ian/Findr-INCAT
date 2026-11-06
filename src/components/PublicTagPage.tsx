@@ -23,7 +23,7 @@ import {
 } from "../data/hubs";
 import { api, ApiError } from "../lib/api";
 import type { ContactMethod, PublicTagView } from "../types";
-import { CategoryArt } from "./CategoryArt";
+import CategoryArt from "./CategoryArt";
 
 export interface PublicTagPageProps {
     publicCode: string;
@@ -83,14 +83,12 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Direct contact reveal state (Turnstile-gated)
     const [revealedMethods, setRevealedMethods] = useState<
         ContactMethod[] | null
     >(null);
     const [revealing, setRevealing] = useState(false);
     const [revealError, setRevealError] = useState<string | null>(null);
 
-    // Relay message form state
     const [messageBody, setMessageBody] = useState("");
     const [finderContact, setFinderContact] = useState("");
     const [foundAtHub, setFoundAtHub] = useState<CampusHubName | "">("");
@@ -104,7 +102,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
     const [msgSent, setMsgSent] = useState(false);
     const [msgError, setMsgError] = useState<string | null>(null);
 
-    // Report abuse state
     const [reportOpen, setReportOpen] = useState(false);
     const [reportReason, setReportReason] = useState("");
     const [reportSubmitted, setReportSubmitted] = useState(false);
@@ -124,7 +121,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                     setFoundAtHub(res.tag.dropOffHub);
                 }
             })
-            .catch((err) => {
+            .catch((err: unknown) => {
                 if (cancelled) return;
                 setError(
                     err instanceof ApiError
@@ -181,7 +178,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 "dev-bypass-token",
             );
             setRevealedMethods(res.visibleMethods);
-        } catch (err) {
+        } catch (err: unknown) {
             setRevealError(
                 err instanceof Error
                     ? err.message
@@ -208,7 +205,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             });
             setMsgSent(true);
             setMessageBody("");
-        } catch (err) {
+        } catch (err: unknown) {
             setMsgError(
                 err instanceof Error
                     ? err.message
@@ -230,7 +227,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             });
             setReportSubmitted(true);
         } catch {
-            // Ignore duplicate report errors
             setReportSubmitted(true);
         }
     };
@@ -304,7 +300,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
 
     return (
         <div className="mx-auto max-w-lg space-y-4 pb-10">
-            {/* Top Bar */}
             <div className="flex items-center justify-between">
                 {onBack ? (
                     <button
@@ -327,7 +322,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 </span>
             </div>
 
-            {/* Lost Mode Alert Banner */}
             {tag.lostMode && (
                 <div className="rounded-2xl border border-rose-500/60 bg-rose-950/35 p-4 shadow-lg">
                     <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-rose-300 uppercase">
@@ -343,9 +337,8 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 </div>
             )}
 
-            {/* Friendly Finder Hero Card */}
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-xl">
-                <div className="bg-gradient-to-br from-emerald-950/70 via-neutral-950 to-neutral-950 p-5">
+                <div className="bg-linear-to-br from-emerald-950/70 via-neutral-950 to-neutral-950 p-5">
                     <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>
@@ -365,7 +358,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                             <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900">
                                 <CategoryArt
                                     category={tag.itemType}
-                                    className="h-10 w-10"
+                                    className="h-10 w-10 text-emerald-400"
                                 />
                             </div>
                         )}
@@ -386,7 +379,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                     </div>
                 </div>
 
-                {/* Suggested Campus Drop-off Hub */}
                 {tag.dropOffHub && (
                     <div className="border-t border-neutral-800/90 bg-neutral-900/50 px-5 py-3.5">
                         <div className="flex items-start gap-3">
@@ -415,7 +407,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 )}
             </div>
 
-            {/* Direct Contact Options (Turnstile-Protected Reveal) */}
             {tag.visibleMethodsCount > 0 && (
                 <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
                     <div className="flex items-center justify-between">
@@ -504,7 +495,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 </div>
             )}
 
-            {/* Relay Message Form ("Message the Owner") */}
             <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
                 <h2 className="text-sm font-bold text-neutral-100">
                     Message the Owner Directly
@@ -611,7 +601,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                             />
                         </div>
 
-                        {/* Explicit One-Time Location Share Consent */}
                         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 p-3 text-xs">
                             <input
                                 type="checkbox"
@@ -655,7 +644,6 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                 )}
             </div>
 
-            {/* Footer & Report Abuse */}
             <div className="flex items-center justify-between px-1 text-xs text-neutral-500">
                 <span>
                     Powered by Findr INCAT &middot; Zero-Account QR Recovery
