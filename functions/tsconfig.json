@@ -11,5 +11,5 @@
         "noEmit": true,
         "skipLibCheck": true
     },
-    "include": ["./**/*.ts", "../src/types.ts", "../src/data/hubs.ts"]
+    "include": ["./**/*.ts", "../src/types.ts", "../src/data/hubs.ts", "api/[[route]]", "api/[[route]].ts"]
 }

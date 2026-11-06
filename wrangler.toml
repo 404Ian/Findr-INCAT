@@ -4,7 +4,7 @@ pages_build_output_dir = "dist"
 compatibility_date = "2025-02-14"
 
 [[d1_databases]]
-binding = "findr_incat_db"
+binding = "DB"
 database_name = "findr-incat-db"
 database_id = "f2ce4053-b951-4800-b991-fd9f8d38bc72"
 migrations_dir = "migrations"
