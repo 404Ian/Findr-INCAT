@@ -1,155 +1,114 @@
-import type { CampusHub, DemoUser } from "../types";
+// src/data/hubs.ts
+export const INCAT_CAMPUS_CENTER = {
+    lat: 18.1988,
+    lng: 120.5936,
+    zoom: 18,
+} as const;
 
-/**
- * Exact INCAT Campus Center (P. Gomez St / General Segundo Ave, Laoag City)
- */
-export const INCAT_CENTER: [number, number] = [18.20389, 120.59268];
-
-/**
- * Campus bounding box (~400m padding around INCAT)
- */
-export const INCAT_MAX_BOUNDS: [[number, number], [number, number]] = [
-    [18.2002, 120.5888], // South-West corner
-    [18.2076, 120.5966], // North-East corner
-];
-
-/**
- * INCAT Drop-off Hubs — coordinates sit directly on each building's entrance
- */
-export const CAMPUS_HUBS: CampusHub[] = [
+export const INCAT_HUBS = [
     {
-        id: "guard-house",
-        code: "INCAT-GATE",
-        name: "Main Gate / Guard House",
-        building: "Main Gate Guard House & RFID Turnstile Desk",
-        custodyNote:
-            "INCAT Main Gate Guard House along P. Gomez St. Logbook available 6:00 AM – 7:00 PM.",
-        lat: 18.20354,
-        lng: 120.59219,
+        id: "hub-guard-house",
+        name: "Guard House",
+        building: "Main Gate (P. Gomez St.)",
+        type: "dropoff",
+        lat: 18.19845,
+        lng: 120.59315,
+        description:
+            "24/7 main entrance security desk and primary drop-off point.",
     },
     {
-        id: "guidance",
-        code: "INCAT-GUID",
+        id: "hub-guidance",
         name: "Guidance Office",
-        building: "Admin Building Room 102 — Ask for Ms. Santos",
-        custodyNote:
-            "INCAT Guidance & Counseling Office. Claim between 7:30 AM – 4:30 PM with your school ID.",
-        lat: 18.20376,
-        lng: 120.59242,
+        building: "Administration Building",
+        type: "dropoff",
+        lat: 18.19878,
+        lng: 120.59348,
+        description: "Student affairs and lost ID / valuable item safekeeping.",
     },
     {
-        id: "ict-building",
-        code: "INCAT-ICT",
-        name: "ICT Building",
-        building: "ICT Building Room 202 — Faculty Cubicle 4",
-        custodyNote:
-            "TVL-ICT Department Desk. Open during school hours 7:30 AM – 5:00 PM.",
-        lat: 18.20416,
-        lng: 120.59256,
+        id: "hub-ssg-office",
+        name: "SSG / Student Center",
+        building: "Student Center Pavilion",
+        type: "dropoff",
+        lat: 18.19895,
+        lng: 120.59372,
+        description:
+            "Supreme Student Government desk for student-turned-in items.",
     },
     {
-        id: "computer-lab",
-        code: "INCAT-LAB",
-        name: "Computer Lab",
-        building: "Computer Systems Servicing (CSS) Lab 2",
-        custodyNote:
-            "Held at the Computer Lab technician desk. Bring your INCAT ID to verify.",
-        lat: 18.20415,
-        lng: 120.59284,
+        id: "hub-ict-lab",
+        name: "ICT / Computer Lab",
+        building: "TVL & ICT Building, 2F",
+        type: "lab",
+        lat: 18.19912,
+        lng: 120.59395,
+        description: "Computer programming and networking laboratories.",
     },
     {
-        id: "gymnasium",
-        code: "INCAT-GYM",
-        name: "Gymnasium",
-        building: "Covered Court Bleachers / PE Department Desk",
-        custodyNote:
-            "INCAT Covered Gymnasium. Unclaimed items are turned over to the Main Gate by 5:00 PM.",
-        lat: 18.20398,
-        lng: 120.59308,
+        id: "hub-electronics-lab",
+        name: "Electronics & Electrical Lab",
+        building: "Industrial Arts Building",
+        type: "lab",
+        lat: 18.19925,
+        lng: 120.59355,
+        description: "EIM and EPAS workshop rooms.",
     },
     {
-        id: "library",
-        code: "INCAT-LIB",
-        name: "Library / Social Hall",
-        building: "Library & Social Hall Building — Circulation Desk",
-        custodyNote:
-            "INCAT Campus Library. Open Monday to Friday, 8:00 AM – 5:00 PM.",
-        lat: 18.20372,
-        lng: 120.59292,
+        id: "hub-automotive-shop",
+        name: "Automotive & Welding Shop",
+        building: "North Trade Complex",
+        type: "lab",
+        lat: 18.19942,
+        lng: 120.59328,
+        description: "Automotive servicing and SMAW trade bays.",
     },
     {
-        id: "ssg-office",
-        code: "INCAT-SSG",
-        name: "SSG / Student Council Office",
-        building: "Student Center Room 104",
-        custodyNote:
-            "Supreme Student Government Office. Officer on duty during recess, lunch, and dismissal.",
-        lat: 18.20395,
-        lng: 120.59236,
+        id: "hub-food-trades",
+        name: "Food Trades & Garments Lab",
+        building: "Home Economics Building",
+        type: "lab",
+        lat: 18.19862,
+        lng: 120.59388,
+        description: "Bread & Pastry, Cookery, and Dressmaking laboratories.",
     },
     {
-        id: "canteen",
-        code: "INCAT-CNT",
-        name: "School Canteen",
-        building: "Main Canteen Counter & Washing Area",
-        custodyNote:
-            "Held at the Canteen Co-op Counter during lunch, then forwarded to Guidance.",
-        lat: 18.20356,
-        lng: 120.59268,
+        id: "hub-library",
+        name: "Campus Library",
+        building: "Academic Building, 2F",
+        type: "facility",
+        lat: 18.19885,
+        lng: 120.59412,
+        description: "Reading hall and study tables.",
     },
     {
-        id: "related-subjects",
-        code: "INCAT-RSB",
-        name: "Related Subjects Building",
-        building: "Related Subjects Bldg — 1st Floor Faculty Room",
-        custodyNote: "Academic & Related Subjects Department Faculty Room.",
-        lat: 18.20438,
-        lng: 120.59268,
+        id: "hub-gymnasium",
+        name: "INCAT Covered Court",
+        building: "Campus Quadrangle",
+        type: "facility",
+        lat: 18.19892,
+        lng: 120.59362,
+        description: "Main assembly court, bleachers, and stage area.",
     },
-];
+    {
+        id: "hub-canteen",
+        name: "Campus Canteen",
+        building: "South Wing",
+        type: "facility",
+        lat: 18.19852,
+        lng: 120.59358,
+        description: "Main dining area and food stalls.",
+    },
+] as const;
 
-export const ITEM_CATEGORIES = [
-    "Wallets & Cash",
-    "Tumblers & Flasks",
-    "Phones & Gadgets",
-    "Calculators",
-    "IDs & Lanyards",
-    "Bags & Pouches",
-    "Keys & Locks",
-    "Books & Notebooks",
-];
+export type CampusHubName = (typeof INCAT_HUBS)[number]["name"];
+export type CampusHubId = (typeof INCAT_HUBS)[number]["id"];
 
-export const DEMO_USERS: DemoUser[] = [
-    {
-        id: "student-ian",
-        name: "Ian Dela Cruz",
-        role: "STUDENT",
-        dept: "Grade 12 - STEM A",
-        initials: "ID",
-    },
-    {
-        id: "office-clara",
-        name: "Ms. Clara Santos",
-        role: "OFFICE",
-        dept: "Guidance Office (ADM-102)",
-        initials: "CS",
-    },
-    {
-        id: "faculty-marco",
-        name: "Engr. Marco Reyes",
-        role: "FACULTY",
-        dept: "Mathematics & Robotics Dept",
-        initials: "MR",
-    },
-    {
-        id: "guard-bautista",
-        name: "Officer Bautista",
-        role: "GUARD",
-        dept: "Main Gate Security Desk",
-        initials: "OB",
-    },
-];
-
-export function getHubById(hubId: string): CampusHub {
-    return CAMPUS_HUBS.find((h) => h.id === hubId) || CAMPUS_HUBS[0];
+export interface CampusLocation {
+    id: string;
+    name: CampusHubName | string;
+    building: string;
+    type: "dropoff" | "lab" | "facility";
+    lat: number;
+    lng: number;
+    description: string;
 }
