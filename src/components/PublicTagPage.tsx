@@ -327,7 +327,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                     <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-rose-300 uppercase">
                         <span className="h-2.5 w-2.5 animate-ping rounded-full bg-rose-400" />
                         <span>
-                            Active Lost Mode &middot; Owner Notified of Scan
+                            Someone lost this item.
                         </span>
                     </div>
                     <p className="mt-1.5 text-xs leading-relaxed text-rose-100">
@@ -342,8 +342,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                     <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>
-                            You found something! &middot; May napulot kang
-                            gamit!
+                            You found something, we've notified the owner about the scan. 
                         </span>
                     </div>
 
@@ -646,7 +645,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
 
             <div className="flex items-center justify-between px-1 text-xs text-neutral-500">
                 <span>
-                    Powered by Findr INCAT &middot; Zero-Account QR Recovery
+                    Powered by Findr INCAT
                 </span>
                 <button
                     type="button"

@@ -9,7 +9,7 @@
         "dev:full": "npm run build && wrangler pages dev dist --port 8788",
         "build": "tsc --noEmit && tsc -p functions/tsconfig.json --noEmit && vite build",
         "typecheck": "tsc --noEmit && tsc -p functions/tsconfig.json --noEmit",
-        "db:init:local": "wrangler d1 execute findr-incat-db --local --file=./schema.sql",
+        "db:init:local": "wrangler d1 execute findr-incat-db --local --file=./migrations/0001_init.sql",
         "db:seed:local": "wrangler d1 execute findr-incat-db --local --file=./migrations/0002_seed_incat.sql",
         "migrate:local": "wrangler d1 migrations apply findr-incat-db --local",
         "migrate:remote": "wrangler d1 migrations apply findr-incat-db --remote",
@@ -18,7 +18,6 @@
     },
     "dependencies": {
         "clsx": "^2.1.1",
-        "concurrently": "^10.0.6",
         "html5-qrcode": "^2.3.8",
         "leaflet": "^1.9.4",
         "lucide-react": "^0.468.0",
@@ -36,6 +35,7 @@
         "@types/qrcode": "^1.5.5",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.7.0",
         "eslint": "^9.17.0",
         "eslint-plugin-react-hooks": "^5.0.0",
         "eslint-plugin-react-refresh": "^0.4.16",
@@ -44,6 +44,6 @@
         "typescript": "~5.7.2",
         "typescript-eslint": "^8.18.2",
         "vite": "^6.0.5",
-        "wrangler": "^3.109.0"
+        "wrangler": "^3.114.17"
     }
 }

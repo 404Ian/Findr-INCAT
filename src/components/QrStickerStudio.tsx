@@ -482,7 +482,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                             >
                                 <Printer className="h-4 w-4 text-emerald-400" />
                                 <span>
-                                    Print A4 Sheet / Save PDF (
+                                    Print or Save (
                                     {printableTags.length})
                                 </span>
                             </button>
@@ -834,8 +834,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                 className="h-3.5 w-3.5 rounded border-neutral-600 text-emerald-600"
                                             />
                                             <span>
-                                                Include on printable A4 sticker
-                                                sheet below
+                                                Include on print sheet (A4) for stickers    
                                             </span>
                                         </label>
                                     )}
@@ -849,7 +848,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 px-5 py-3.5 text-xs">
                         <div className="flex items-center gap-3">
                             <span className="font-semibold text-neutral-200">
-                                Printable A4 Sticker Sheet Preview
+                                Print Preview (A4)
                             </span>
                             <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900 p-0.5">
                                 <button
@@ -883,7 +882,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500"
                         >
                             <Printer className="h-4 w-4" />
-                            <span>Print Stickers / Save as PDF</span>
+                            <span>Print or Save</span>
                         </button>
                     </div>
                 )}
@@ -897,7 +896,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                     <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-3">
                         <div>
                             <div className="text-sm font-extrabold tracking-tight text-emerald-950">
-                                FINDR INCAT &middot; CAMPUS RECOVERY STICKERS
+                                FINDR INCAT &middot; CAMPUS RECOVERY SYSTEM
                             </div>
                             <div className="text-[11px] text-neutral-600">
                                 Cut along the dashed lines and stick onto your
@@ -962,8 +961,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                         </div>
 
                                         <div className="text-[10px] font-medium text-neutral-700">
-                                            If found, please scan &bull; Kapag
-                                            napulot, i-scan po
+                                            If found, please scan the QR Code.
                                         </div>
 
                                         <div className="mt-1.5 truncate border-t border-neutral-200 pt-1 text-xs font-bold text-emerald-950">
@@ -972,7 +970,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
 
                                         {tag.contactConfig.dropOffHub && (
                                             <div className="truncate text-[10px] text-neutral-600">
-                                                Drop-off:{" "}
+                                                Preferred Drop-off:{" "}
                                                 {tag.contactConfig.dropOffHub}
                                             </div>
                                         )}
