@@ -1,255 +1,313 @@
-import React, { useState } from "react";
-import { MessageSquare, ExternalLink, Phone, Check } from "lucide-react";
-import { CAMPUS_HUBS, getHubById } from "../data/hubs";
-import type { QrGearItem } from "../types";
-import { ItemMediaBox } from "./CategoryArt";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { Html5Qrcode } from "html5-qrcode";
+import {
+    Camera,
+    CameraOff,
+    ImageUp,
+    Keyboard,
+    QrCode,
+    Search,
+    Sparkles,
+} from "lucide-react";
+import { PublicTagPage } from "./PublicTagPage";
 
-interface QrScanSimulatorProps {
-    gear: QrGearItem[];
-    selectedTagId: string;
-    onSelectTag: (tagId: string) => void;
-    onPingTagLocation: (tagId: string, locationName: string) => void;
-    onOpenTagChat: (item: QrGearItem) => void;
+export interface QrScanSimulatorProps {
+    initialCode?: string | null;
+    onCodeResolved?: (code: string) => void;
+}
+
+function extractTagCode(rawInput: string): string | null {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return null;
+
+    // Match /t/CODE in a scanned URL
+    const urlMatch = trimmed.match(/\/t\/([A-Za-z0-9_-]{6,32})/i);
+    if (urlMatch) {
+        return urlMatch[1].toUpperCase();
+    }
+
+    // Or direct alphanumeric code (#K9M4X7P2Q8LA or K9M4X7P2Q8LA)
+    const cleanCode = trimmed.replace(/^#/, "").toUpperCase();
+    if (/^[A-Z0-9_-]{6,32}$/.test(cleanCode)) {
+        return cleanCode;
+    }
+
+    return null;
 }
 
 export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
-    gear,
-    selectedTagId,
-    onSelectTag,
-    onPingTagLocation,
-    onOpenTagChat,
+    initialCode = null,
+    onCodeResolved,
 }) => {
-    const activeItem = gear.find((g) => g.tagId === selectedTagId) || gear[0];
-    const [selectedHubName, setSelectedHubName] = useState(CAMPUS_HUBS[0].name);
-    const [pingSent, setPingSent] = useState(false);
+    const scannerRegionId = useId().replace(/:/g, "_");
+    const scannerRef = useRef<Html5Qrcode | null>(null);
 
-    if (!activeItem) {
+    const [activeCode, setActiveCode] = useState<string | null>(
+        initialCode ? extractTagCode(initialCode) : null,
+    );
+    const [cameraActive, setCameraActive] = useState(false);
+    const [cameraError, setCameraError] = useState<string | null>(null);
+    const [manualInput, setManualInput] = useState("");
+    const [manualError, setManualError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (initialCode) {
+            const parsed = extractTagCode(initialCode);
+            if (parsed) setActiveCode(parsed);
+        }
+    }, [initialCode]);
+
+    const stopCamera = async () => {
+        if (scannerRef.current) {
+            try {
+                if (scannerRef.current.isScanning) {
+                    await scannerRef.current.stop();
+                }
+                scannerRef.current.clear();
+            } catch {
+                // Ignore stop errors
+            }
+            scannerRef.current = null;
+        }
+        setCameraActive(false);
+    };
+
+    useEffect(() => {
+        return () => {
+            void stopCamera();
+        };
+    }, []);
+
+    const startCamera = async () => {
+        setCameraError(null);
+        setManualError(null);
+
+        try {
+            const instance = new Html5Qrcode(scannerRegionId);
+            scannerRef.current = instance;
+            setCameraActive(true);
+
+            await instance.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 220, height: 220 } },
+                (decodedText) => {
+                    const code = extractTagCode(decodedText);
+                    if (code) {
+                        void stopCamera();
+                        setActiveCode(code);
+                        onCodeResolved?.(code);
+                    }
+                },
+                () => {
+                    // Frame without QR code; ignore
+                },
+            );
+        } catch (err) {
+            setCameraActive(false);
+            setCameraError(
+                err instanceof Error
+                    ? err.message
+                    : "Camera permission was denied or no camera was detected on this device. Use photo scan or manual code entry below.",
+            );
+        }
+    };
+
+    const handleScanImageFile = async (
+        e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setCameraError(null);
+        setManualError(null);
+
+        try {
+            const instance = new Html5Qrcode(scannerRegionId);
+            const decodedText = await instance.scanFile(file, false);
+            const code = extractTagCode(decodedText);
+            if (!code) {
+                setManualError(
+                    "QR code was read, but it is not a Findr INCAT tag.",
+                );
+                return;
+            }
+            setActiveCode(code);
+            onCodeResolved?.(code);
+        } catch {
+            setManualError(
+                "Could not detect a valid QR code in that image. Try a clearer photo or type the tag code below.",
+            );
+        } finally {
+            e.target.value = "";
+        }
+    };
+
+    const handleManualSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setManualError(null);
+        const code = extractTagCode(manualInput);
+        if (!code) {
+            setManualError(
+                "Please enter a valid Findr tag code (e.g., K9M4X7P2Q8LA) or /t/ URL.",
+            );
+            return;
+        }
+        void stopCamera();
+        setActiveCode(code);
+        onCodeResolved?.(code);
+    };
+
+    if (activeCode) {
         return (
-            <div className="py-12 text-center text-sm text-muted">
-                No registered tags available to preview.
-            </div>
+            <PublicTagPage
+                publicCode={activeCode}
+                onBack={() => setActiveCode(null)}
+            />
         );
     }
 
-    const preferredHub = getHubById(activeItem.preferredHubId);
-
-    const handlePing = () => {
-        onPingTagLocation(activeItem.tagId, selectedHubName);
-        setPingSent(true);
-        setTimeout(() => setPingSent(false), 2500);
-    };
-
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left Column: Tag Selector List */}
-            <div className="lg:col-span-5 space-y-4">
-                <div>
-                    <h1 className="text-base font-semibold tracking-tight text-text">
-                        Scan preview
-                    </h1>
-                    <p className="text-sm text-muted mt-0.5">
-                        Select a registered tag to preview what a student or
-                        guard sees when scanning the sticker.
-                    </p>
-                </div>
-
-                <div className="border border-border rounded-lg bg-surface divide-y divide-border">
-                    {gear.map((item) => {
-                        const isSelected = item.tagId === activeItem.tagId;
-                        const isLost = item.status === "LOST";
-                        return (
-                            <button
-                                key={item.tagId}
-                                type="button"
-                                onClick={() => {
-                                    onSelectTag(item.tagId);
-                                    setPingSent(false);
-                                }}
-                                className={`w-full text-left px-4 py-3.5 transition-colors duration-150 flex items-center justify-between gap-3 ${
-                                    isSelected
-                                        ? "bg-subtle"
-                                        : "hover:bg-subtle/50"
-                                }`}
-                            >
-                                <div className="min-w-0">
-                                    <div className="font-mono text-xs text-muted">
-                                        {item.tagId}
-                                    </div>
-                                    <div className="text-sm font-medium text-text truncate mt-0.5">
-                                        {item.name}
-                                    </div>
-                                </div>
-                                <span className="inline-flex items-center gap-1.5 text-xs text-muted shrink-0">
-                                    <span
-                                        className={`w-2 h-2 rounded-full ${
-                                            isLost ? "bg-lost" : "bg-returned"
-                                        }`}
-                                    />
-                                    {isLost ? "Lost" : "Safe"}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Right Column: Notch-free Phone Frame (thin border, rounded 28px corners, photo on top) */}
-            <div className="lg:col-span-7 flex justify-center">
-                <div className="w-full max-w-90 border border-border rounded-[28px] bg-surface overflow-hidden">
-                    {/* Minimal Browser Address Bar */}
-                    <div className="px-5 py-3 border-b border-border flex items-center justify-between text-xs text-muted bg-subtle/40">
-                        <span className="font-mono truncate">
-                            findr-incat.ph/scan/{activeItem.tagId}
+        <div className="mx-auto max-w-xl space-y-5">
+            {/* Scanner Card */}
+            <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 p-5 shadow-xl">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                            <QrCode className="h-4 w-4" />
+                            <span>In-App QR Tag Scanner</span>
                         </span>
-                        <span className="inline-flex items-center gap-1.5 shrink-0">
-                            <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                    activeItem.status === "LOST"
-                                        ? "bg-lost"
-                                        : "bg-returned"
-                                }`}
-                            />
-                            {activeItem.status === "LOST" ? "Lost" : "Safe"}
-                        </span>
+                        <h2 className="mt-1 text-lg font-bold text-neutral-100">
+                            Scan a Findr INCAT Sticker
+                        </h2>
+                        <p className="mt-0.5 text-xs text-neutral-400">
+                            Point your camera at any Findr QR tag, upload a
+                            screenshot, or enter the alphanumeric code printed
+                            on the sticker.
+                        </p>
                     </div>
+                </div>
 
-                    {/* 4:3 Top Photo / Category Placeholder */}
-                    <ItemMediaBox
-                        photoUrl={activeItem.photoUrl}
-                        title={activeItem.name}
-                        category={activeItem.category}
-                        type={activeItem.status === "LOST" ? "LOST" : "FOUND"}
-                        status={
-                            activeItem.status === "LOST" ? "OPEN" : "RESOLVED"
-                        }
-                        showStamp={false}
-                        iconSize={40}
-                    />
+                {/* Camera Viewport */}
+                <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
+                    <div id={scannerRegionId} className="w-full" />
 
-                    <div className="p-5 space-y-5">
-                        {/* Item Name & Owner */}
-                        <div className="space-y-1">
-                            <div className="font-mono text-xs text-muted">
-                                {activeItem.tagId}
+                    {!cameraActive && (
+                        <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                            <div className="rounded-2xl bg-emerald-500/10 p-3.5 text-emerald-400">
+                                <Camera className="h-8 w-8" />
                             </div>
-                            <h2 className="text-base font-semibold tracking-tight text-text">
-                                {activeItem.name}
-                            </h2>
-                            <p className="text-sm text-muted">
-                                Owner: {activeItem.ownerName} (
-                                {activeItem.ownerSection})
+                            <p className="mt-3 text-xs text-neutral-300">
+                                Use your phone or laptop camera to scan an
+                                item&apos;s QR tag directly.
                             </p>
-                        </div>
 
-                        {/* Handover Note */}
-                        <div className="pt-4 border-t border-border space-y-1 text-sm">
-                            <div className="text-xs text-muted">Owner note</div>
-                            <p className="text-text leading-relaxed">
-                                {activeItem.handoverNote}
-                            </p>
-                            <p className="text-xs text-muted pt-1">
-                                Preferred drop-off: {preferredHub.name}
-                            </p>
-                        </div>
-
-                        {/* One Primary Button: Send Location */}
-                        <div className="pt-4 border-t border-border space-y-2.5">
-                            <label
-                                htmlFor="scan-spot-select"
-                                className="block text-xs text-muted"
-                            >
-                                Current location of this item
-                            </label>
-                            <select
-                                id="scan-spot-select"
-                                value={selectedHubName}
-                                onChange={(e) =>
-                                    setSelectedHubName(e.target.value)
-                                }
-                                className="w-full px-3 py-2 text-sm bg-bg border border-border rounded-md text-text"
-                            >
-                                {CAMPUS_HUBS.map((hub) => (
-                                    <option key={hub.id} value={hub.name}>
-                                        {hub.name}
-                                    </option>
-                                ))}
-                            </select>
-
-                            <button
-                                type="button"
-                                onClick={handlePing}
-                                className="w-full py-2 px-4 bg-accent text-accent-fg text-sm font-medium rounded-md hover:opacity-90 transition-opacity duration-150 inline-flex items-center justify-center gap-1.5"
-                            >
-                                {pingSent ? (
-                                    <>
-                                        <Check size={16} strokeWidth={1.5} />
-                                        Location sent to owner
-                                    </>
-                                ) : (
-                                    "Send current location to owner"
-                                )}
-                            </button>
-                        </div>
-
-                        {/* Plain Contact Links Underneath */}
-                        <div className="pt-4 border-t border-border space-y-2">
-                            <div className="text-xs text-muted">
-                                Contact owner
-                            </div>
-                            <div className="flex flex-col gap-1.5 text-sm">
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
                                 <button
                                     type="button"
-                                    onClick={() => onOpenTagChat(activeItem)}
-                                    className="inline-flex items-center gap-2 text-text hover:text-accent transition-colors duration-150 text-left py-1"
+                                    onClick={startCamera}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-500"
                                 >
-                                    <MessageSquare
-                                        size={15}
-                                        strokeWidth={1.5}
-                                        className="text-muted"
-                                    />
-                                    <span>Open campus chat</span>
+                                    <Camera className="h-4 w-4" />
+                                    <span>Start Camera Scanner</span>
                                 </button>
 
-                                {activeItem.contactChannels.messenger && (
-                                    <a
-                                        href={`https://${activeItem.contactChannels.messenger.replace(
-                                            /^https?:\/\//,
-                                            "",
-                                        )}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 text-text hover:text-accent transition-colors duration-150 py-1"
-                                    >
-                                        <ExternalLink
-                                            size={15}
-                                            strokeWidth={1.5}
-                                            className="text-muted"
-                                        />
-                                        <span>Message on Messenger</span>
-                                    </a>
-                                )}
-
-                                {activeItem.contactChannels.sms && (
-                                    <a
-                                        href={`sms:${activeItem.contactChannels.sms}`}
-                                        className="inline-flex items-center gap-2 text-text hover:text-accent transition-colors duration-150 py-1"
-                                    >
-                                        <Phone
-                                            size={15}
-                                            strokeWidth={1.5}
-                                            className="text-muted"
-                                        />
-                                        <span>
-                                            Send SMS (
-                                            {activeItem.contactChannels.sms})
-                                        </span>
-                                    </a>
-                                )}
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-xs font-semibold text-neutral-200 hover:bg-neutral-800">
+                                    <ImageUp className="h-4 w-4 text-emerald-400" />
+                                    <span>Scan from Photo</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleScanImageFile}
+                                        className="sr-only"
+                                    />
+                                </label>
                             </div>
                         </div>
+                    )}
+
+                    {cameraActive && (
+                        <div className="flex justify-center border-t border-neutral-800 bg-neutral-950 p-3">
+                            <button
+                                type="button"
+                                onClick={stopCamera}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-900/40"
+                            >
+                                <CameraOff className="h-4 w-4" />
+                                <span>Stop Camera</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {cameraError && (
+                    <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 text-xs text-amber-200">
+                        {cameraError}
+                    </div>
+                )}
+
+                {/* Manual Tag Code Fallback */}
+                <form
+                    onSubmit={handleManualSubmit}
+                    className="mt-5 border-t border-neutral-800/80 pt-4"
+                >
+                    <label
+                        htmlFor="manual-tag-code"
+                        className="flex items-center gap-1.5 text-xs font-semibold text-neutral-300"
+                    >
+                        <Keyboard className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Manual Tag Code Lookup</span>
+                    </label>
+
+                    <div className="mt-2 flex items-center gap-2">
+                        <input
+                            id="manual-tag-code"
+                            type="text"
+                            value={manualInput}
+                            onChange={(e) => setManualInput(e.target.value)}
+                            placeholder="Enter code (e.g., K9M4X7P2Q8LA or T7V3N9R4W2BC)"
+                            className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 font-mono text-xs text-neutral-100 uppercase placeholder:font-sans placeholder:normal-case placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
+                        />
+                        <button
+                            type="submit"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+                        >
+                            <Search className="h-3.5 w-3.5" />
+                            <span>Open Tag</span>
+                        </button>
+                    </div>
+
+                    {manualError && (
+                        <p className="mt-2 text-xs text-rose-400">
+                            {manualError}
+                        </p>
+                    )}
+                </form>
+
+                {/* Quick Demo Seeded INCAT Tags for Testing */}
+                <div className="mt-4 rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-3 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-neutral-300">
+                        <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Try Seeded INCAT Campus Tags:</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setActiveCode("T7V3N9R4W2BC")}
+                            className="rounded-lg border border-rose-500/40 bg-rose-950/25 px-3 py-1.5 font-mono text-[11px] text-rose-200 hover:bg-rose-950/40"
+                        >
+                            #T7V3N9R4W2BC (AquaFlask &middot; Lost Mode ON)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveCode("K9M4X7P2Q8LA")}
+                            className="rounded-lg border border-emerald-500/40 bg-emerald-950/25 px-3 py-1.5 font-mono text-[11px] text-emerald-200 hover:bg-emerald-950/40"
+                        >
+                            #K9M4X7P2Q8LA (Casio ClassWiz Calculator)
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     );
 };
+
+export default QrScanSimulator;

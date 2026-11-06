@@ -330,6 +330,33 @@
 }
 
 @media print {
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
+
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    .no-print,
+    header,
+    nav,
+    footer {
+        display: none !important;
+    }
+
+    #findr-printable-sheet {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+    }
+}
+
+@media print {
     body * {
         visibility: hidden;
     }
