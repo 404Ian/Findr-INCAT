@@ -233,6 +233,102 @@
     pointer-events: none !important;
 }
 
+/* Ensure Leaflet and MapLibre GL canvas never collapse to 0x0 */
+.leaflet-container {
+    width: 100%;
+    height: 100%;
+    background-color: #e2e8f0;
+}
+
+.dark .leaflet-container,
+[data-theme="dark"] .leaflet-container {
+    background-color: #0f172a;
+}
+
+.leaflet-maplibre-gl-pane,
+.leaflet-maplibre-gl-pane .maplibregl-map,
+.leaflet-maplibre-gl-pane .maplibregl-canvas-container,
+.leaflet-maplibre-gl-pane .maplibregl-canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Dark mode filter applied ONLY to the raster tile pane when OSM fallback is active */
+.osm-raster-dark .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
+        saturate(0.5);
+}
+
+/* Hub pin permanent tooltip (11px, subtle background, visible at zoom 18+) */
+.leaflet-tooltip.incat-hub-tooltip {
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    transition: opacity 150ms ease;
+}
+
+.dark .leaflet-tooltip.incat-hub-tooltip,
+[data-theme="dark"] .leaflet-tooltip.incat-hub-tooltip {
+    background: rgba(15, 23, 42, 0.88);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.leaflet-tooltip.incat-hub-tooltip::before {
+    display: none;
+}
+
+/* Hide hub labels below zoom 18 or when collided */
+.hub-labels-hidden .leaflet-tooltip.incat-hub-tooltip,
+.leaflet-tooltip.incat-hub-tooltip.is-colliding {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* Dark mode filter applied ONLY to the raster tile pane when OSM fallback is active */
+.incat-osm-dark-raster .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
+        saturate(0.5);
+}
+
+/* Permanent 11px hub pin tooltip with subtle readable background */
+.leaflet-tooltip.incat-hub-label {
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.88);
+    color: #111827;
+    border: 1px solid rgba(17, 24, 39, 0.12);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 150ms ease;
+}
+
+.dark .leaflet-tooltip.incat-hub-label,
+[data-theme="dark"] .leaflet-tooltip.incat-hub-label {
+    background: rgba(17, 24, 39, 0.86);
+    color: #f9fafb;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.leaflet-tooltip.incat-hub-label::before {
+    display: none;
+}
+
 @media print {
     body * {
         visibility: hidden;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { L, maplibregl } from "../lib/setupMapLibre";
 import "@maplibre/maplibre-gl-leaflet";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
@@ -9,7 +9,6 @@ import {
     INCAT_MAX_BOUNDS,
     getHubById,
 } from "../data/hubs";
-import { BUILDINGS, INCAT_BUILDINGS_GEOJSON } from "../data/buildings";
 import type { PostItem } from "../types";
 
 interface MaplibreGLLayer extends L.Layer {
@@ -29,14 +28,20 @@ interface CampusMapProps {
     onOpenPostDetail: (post: PostItem) => void;
 }
 
+const MIN_ZOOM = 16;
+const MAX_ZOOM = 20;
+const DEFAULT_ZOOM = 18;
+const FALLBACK_TIMEOUT_MS = 3000;
+
 const OPENFREEMAP_LIBERTY_STYLE =
     "https://tiles.openfreemap.org/styles/liberty";
 const OPENFREEMAP_DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
+const OSM_RASTER_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
+
 const ESRI_WORLD_IMAGERY_TILES =
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-const ESRI_LIGHT_GRAY_FALLBACK =
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 
 const OPENFREEMAP_ATTRIBUTION =
     '<a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
@@ -73,46 +78,181 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
     const glLayerRef = useRef<MaplibreGLLayer | null>(null);
+    const osmFallbackLayerRef = useRef<L.TileLayer | null>(null);
     const satelliteLayerRef = useRef<L.TileLayer | null>(null);
-    const buildingsLayerRef = useRef<L.GeoJSON | null>(null);
-    const labelsLayerRef = useRef<L.LayerGroup | null>(null);
     const markersLayerRef = useRef<L.LayerGroup | null>(null);
+    const activeStyleRef = useRef<string | null>(null);
 
     const [baseMode, setBaseMode] = useState<BaseMapMode>("map");
-    const [currentZoom, setCurrentZoom] = useState<number>(18);
+    const [usingOsmFallback, setUsingOsmFallback] = useState<boolean>(false);
+    const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_ZOOM);
     const [popoverPost, setPopoverPost] = useState<PostItem | null>(null);
 
-    // Initialize Leaflet map, OpenFreeMap Liberty/Dark vector layer, Satellite layer, and GeoJSON buildings
+    const baseModeRef = useRef<BaseMapMode>(baseMode);
+    baseModeRef.current = baseMode;
+
+    // Resolve hub label collisions & zoom >= 18 visibility so labels never overlap
+    const updateHubLabelCollisions = useCallback(() => {
+        const container = mapContainerRef.current;
+        const map = mapInstanceRef.current;
+        if (!container || !map) return;
+
+        const tooltips = Array.from(
+            container.querySelectorAll<HTMLElement>(
+                ".leaflet-tooltip.incat-hub-label",
+            ),
+        );
+
+        const zoom = map.getZoom();
+        if (zoom < 18) {
+            tooltips.forEach((el) => {
+                el.style.opacity = "0";
+                el.style.visibility = "hidden";
+            });
+            return;
+        }
+
+        const visibleRects: DOMRect[] = [];
+        tooltips.forEach((el) => {
+            el.style.opacity = "1";
+            el.style.visibility = "visible";
+
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+
+            const isOverlapping = visibleRects.some(
+                (r) =>
+                    !(
+                        rect.right < r.left ||
+                        rect.left > r.right ||
+                        rect.bottom < r.top ||
+                        rect.top > r.bottom
+                    ),
+            );
+
+            if (isOverlapping) {
+                el.style.opacity = "0";
+                el.style.visibility = "hidden";
+            } else {
+                visibleRects.push(rect);
+            }
+        });
+    }, []);
+
+    // Synchronize both Leaflet viewport and MapLibre WebGL canvas dimensions
+    const syncMapSize = useCallback(() => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+
+        map.invalidateSize();
+        try {
+            const glMap = glLayerRef.current?.getMaplibreMap?.();
+            if (glMap) {
+                glMap.resize();
+            }
+        } catch (err) {
+            console.log("[CampusMap] MapLibre resize failed:", err);
+        }
+        updateHubLabelCollisions();
+    }, [updateHubLabelCollisions]);
+
+    // Initialize Leaflet map, OpenFreeMap Liberty/Dark vector layer, 3s OSM raster fallback, and Satellite layer
     useEffect(() => {
         if (!isOpen || !mapContainerRef.current || mapInstanceRef.current)
             return;
 
+        setUsingOsmFallback(false);
+
         const map = L.map(mapContainerRef.current, {
             center: INCAT_CENTER,
-            zoom: 18,
-            minZoom: 16,
-            maxZoom: 20,
+            zoom: DEFAULT_ZOOM,
+            minZoom: MIN_ZOOM,
+            maxZoom: MAX_ZOOM,
             maxBounds: INCAT_MAX_BOUNDS,
             maxBoundsViscosity: 0.9,
             zoomControl: true,
             attributionControl: true,
         });
+        mapInstanceRef.current = map;
 
         map.attributionControl.setPrefix(false);
         map.attributionControl.addAttribution(OPENFREEMAP_ATTRIBUTION);
 
+        map.on("error", (err) => {
+            console.log("[CampusMap] Leaflet map error:", err);
+        });
+
         setCurrentZoom(map.getZoom());
         map.on("zoomend", () => {
             setCurrentZoom(map.getZoom());
+            updateHubLabelCollisions();
+        });
+        map.on("moveend", () => {
+            updateHubLabelCollisions();
         });
 
-        const mountEsriFallbackOnlyOnFatalFailure = () => {
-            if (!mapInstanceRef.current) return;
-            L.tileLayer(ESRI_LIGHT_GRAY_FALLBACK, {
-                minZoom: 16,
-                maxZoom: 20,
-                maxNativeZoom: 16,
+        // Dev-only coordinate helper: Shift+click logs "lat, lng" and copies to clipboard
+        if (import.meta.env.DEV) {
+            map.on("click", (e: L.LeafletMouseEvent) => {
+                if (!e.originalEvent.shiftKey) return;
+                const coords = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+                console.log(coords);
+                navigator.clipboard?.writeText(coords).catch((err) => {
+                    console.log("[CampusMap] Clipboard copy error:", err);
+                });
+            });
+        }
+
+        let fallbackTriggered = false;
+        let hasRenderedFeatures = false;
+        let fallbackTimer: number | undefined;
+
+        const mountOsmRasterFallback = (reason: string) => {
+            if (fallbackTriggered || !mapInstanceRef.current) return;
+            fallbackTriggered = true;
+            if (fallbackTimer !== undefined) {
+                window.clearTimeout(fallbackTimer);
+            }
+
+            console.log(
+                `[CampusMap] Switching to OpenStreetMap raster fallback: ${reason}`,
+            );
+
+            if (glLayerRef.current) {
+                try {
+                    mapInstanceRef.current.removeLayer(glLayerRef.current);
+                } catch (err) {
+                    console.log(
+                        "[CampusMap] Error removing MapLibre layer:",
+                        err,
+                    );
+                }
+                glLayerRef.current = null;
+            }
+
+            const osmLayer = L.tileLayer(OSM_RASTER_TILES, {
+                minZoom: MIN_ZOOM,
+                maxZoom: MAX_ZOOM,
+                maxNativeZoom: 19,
+                attribution: OSM_ATTRIBUTION,
+                opacity: baseModeRef.current === "satellite" ? 0 : 1,
             }).addTo(mapInstanceRef.current);
+
+            osmLayer.on("tileerror", (err) => {
+                console.log("[CampusMap] OSM raster tile error:", err);
+            });
+
+            osmFallbackLayerRef.current = osmLayer;
+            setUsingOsmFallback(true);
+
+            if (baseModeRef.current === "map") {
+                mapInstanceRef.current.attributionControl.removeAttribution(
+                    OPENFREEMAP_ATTRIBUTION,
+                );
+                mapInstanceRef.current.attributionControl.addAttribution(
+                    OSM_ATTRIBUTION,
+                );
+            }
         };
 
         const styleUrl = darkMode
@@ -122,6 +262,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         const leafletWithGL = L as unknown as {
             maplibreGL?: (options: {
                 style: string;
+                minZoom?: number;
+                maxZoom?: number;
                 attributionControl?: boolean;
             }) => MaplibreGLLayer;
         };
@@ -130,92 +272,198 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             isWebGLSupported() &&
             typeof leafletWithGL.maplibreGL === "function"
         ) {
+            fallbackTimer = window.setTimeout(() => {
+                if (hasRenderedFeatures || fallbackTriggered) return;
+                try {
+                    const glMap = glLayerRef.current?.getMaplibreMap?.();
+                    const features = glMap?.queryRenderedFeatures?.() ?? [];
+                    if (features.length > 0) {
+                        hasRenderedFeatures = true;
+                        return;
+                    }
+                } catch (err) {
+                    console.log(
+                        "[CampusMap] queryRenderedFeatures threw at 3s check:",
+                        err,
+                    );
+                }
+                mountOsmRasterFallback(
+                    "MapLibre layer did not render features within 3 seconds",
+                );
+            }, FALLBACK_TIMEOUT_MS);
+
             try {
                 const glLayer = leafletWithGL
                     .maplibreGL({
                         style: styleUrl,
+                        minZoom: MIN_ZOOM,
+                        maxZoom: MAX_ZOOM,
                         attributionControl: false,
                     })
                     .addTo(map);
                 glLayerRef.current = glLayer;
 
-                // Verify the style JSON endpoint itself is reachable; do NOT trigger fallback on minor glyph/tile warnings
-                fetch(styleUrl, { method: "GET" }).catch(() => {
-                    mountEsriFallbackOnlyOnFatalFailure();
+                const glMap = glLayer.getMaplibreMap?.();
+                if (!glMap) {
+                    throw new Error("getMaplibreMap() returned null/undefined");
+                }
+
+                if (typeof glMap.setMissingStyleImageResolver === "function") {
+                    glMap.setMissingStyleImageResolver((id) => {
+                        // Register a 1x1 transparent image for any missing sprite icon.
+                        const canvas = document.createElement("canvas");
+                        canvas.width = 1;
+                        canvas.height = 1;
+                        const context = canvas.getContext("2d");
+                        if (context) {
+                            context.clearRect(0, 0, 1, 1);
+                            glMap.addImage(
+                                id,
+                                context.getImageData(0, 0, 1, 1),
+                            );
+                        }
+                    });
+                }
+
+                const checkFeaturesRendered = () => {
+                    if (hasRenderedFeatures || fallbackTriggered) return;
+                    try {
+                        const features = glMap.queryRenderedFeatures();
+                        if (Array.isArray(features) && features.length > 0) {
+                            hasRenderedFeatures = true;
+                            if (fallbackTimer !== undefined) {
+                                window.clearTimeout(fallbackTimer);
+                            }
+                        }
+                    } catch {
+                        // Ignore transient query errors before style finishes loading
+                    }
+                };
+
+                glMap.on("style.load", () => {
+                    console.log("[CampusMap] MapLibre style loaded:", styleUrl);
+                    glMap.resize();
+                    checkFeaturesRendered();
                 });
-            } catch {
-                mountEsriFallbackOnlyOnFatalFailure();
+
+                glMap.on("load", () => {
+                    glMap.resize();
+                    checkFeaturesRendered();
+                });
+
+                glMap.on("idle", checkFeaturesRendered);
+                glMap.on("render", checkFeaturesRendered);
+
+                glMap.on("error", (err) => {
+                    console.log("[CampusMap] MapLibre error:", err);
+                    if (!hasRenderedFeatures) {
+                        mountOsmRasterFallback(
+                            "MapLibre emitted an error before rendering features",
+                        );
+                    }
+                });
+            } catch (err) {
+                console.log(
+                    "[CampusMap] MapLibre initialization threw an error:",
+                    err,
+                );
+                mountOsmRasterFallback("MapLibre initialization threw");
             }
         } else {
-            mountEsriFallbackOnlyOnFatalFailure();
+            console.log(
+                "[CampusMap] WebGL or L.maplibreGL unavailable; falling back to OSM raster tiles.",
+            );
+            mountOsmRasterFallback("WebGL or maplibreGL plugin unavailable");
         }
 
         // Satellite raster layer kept ready at opacity 0 for instant 250ms crossfade
         const satLayer = L.tileLayer(ESRI_WORLD_IMAGERY_TILES, {
-            minZoom: 16,
-            maxZoom: 20,
+            minZoom: MIN_ZOOM,
+            maxZoom: MAX_ZOOM,
             maxNativeZoom: 19,
-            opacity: baseMode === "satellite" ? 1 : 0,
+            opacity: baseModeRef.current === "satellite" ? 1 : 0,
             className: "incat-satellite-layer",
         }).addTo(map);
         satelliteLayerRef.current = satLayer;
 
-        // Layer groups for buildings, zoom-gated building labels, and pins
-        labelsLayerRef.current = L.layerGroup().addTo(map);
+        // Layer group for hub, lost, and found pins
         markersLayerRef.current = L.layerGroup().addTo(map);
-        mapInstanceRef.current = map;
 
-        // Keep MapLibre WebGL canvas synced when expand animation runs
+        // Sync size immediately after container is shown, on container resize, and on window resize
+        const rafId = window.requestAnimationFrame(() => syncMapSize());
+        const showTimerId = window.setTimeout(() => syncMapSize(), 100);
+
         const resizeObserver = new ResizeObserver(() => {
-            map.invalidateSize();
-            const glMap = glLayerRef.current?.getMaplibreMap();
-            if (glMap) glMap.resize();
+            syncMapSize();
         });
         resizeObserver.observe(mapContainerRef.current);
 
+        window.addEventListener("resize", syncMapSize);
+
         return () => {
+            if (fallbackTimer !== undefined) {
+                window.clearTimeout(fallbackTimer);
+            }
+            window.cancelAnimationFrame(rafId);
+            window.clearTimeout(showTimerId);
+            window.removeEventListener("resize", syncMapSize);
             resizeObserver.disconnect();
             map.remove();
             mapInstanceRef.current = null;
             glLayerRef.current = null;
+            osmFallbackLayerRef.current = null;
             satelliteLayerRef.current = null;
-            buildingsLayerRef.current = null;
-            labelsLayerRef.current = null;
             markersLayerRef.current = null;
         };
-    }, [isOpen]);
+    }, [isOpen, syncMapSize, updateHubLabelCollisions]);
 
     // Switch between OpenFreeMap Liberty (light) and Dark (dark) in place via setStyle()
     useEffect(() => {
-        const glMap = glLayerRef.current?.getMaplibreMap();
+        if (usingOsmFallback) return;
+        const glMap = glLayerRef.current?.getMaplibreMap?.();
         if (!glMap) return;
 
         const targetStyle = darkMode
             ? OPENFREEMAP_DARK_STYLE
             : OPENFREEMAP_LIBERTY_STYLE;
-        glMap.setStyle(targetStyle);
-    }, [darkMode]);
+
+        if (activeStyleRef.current === targetStyle) return;
+        activeStyleRef.current = targetStyle;
+
+        try {
+            glMap.setStyle(targetStyle);
+        } catch (err) {
+            console.log(
+                "[CampusMap] Failed switching style with setStyle:",
+                err,
+            );
+        }
+    }, [darkMode, usingOsmFallback]);
 
     // Crossfade Map <-> Satellite over 250ms and update attribution
     useEffect(() => {
         const map = mapInstanceRef.current;
         const satLayer = satelliteLayerRef.current;
+        const osmLayer = osmFallbackLayerRef.current;
         const glContainer = glLayerRef.current
-            ?.getMaplibreMap()
-            ?.getContainer();
+            ?.getMaplibreMap?.()
+            ?.getContainer?.();
 
         if (!map || !satLayer) return;
 
         if (baseMode === "satellite") {
             satLayer.setOpacity(1);
+            if (osmLayer) osmLayer.setOpacity(0);
             if (glContainer) {
                 glContainer.style.transition = "opacity 250ms ease";
                 glContainer.style.opacity = "0";
             }
             map.attributionControl.removeAttribution(OPENFREEMAP_ATTRIBUTION);
+            map.attributionControl.removeAttribution(OSM_ATTRIBUTION);
             map.attributionControl.addAttribution(ESRI_SATELLITE_ATTRIBUTION);
         } else {
             satLayer.setOpacity(0);
+            if (osmLayer) osmLayer.setOpacity(1);
             if (glContainer) {
                 glContainer.style.transition = "opacity 250ms ease";
                 glContainer.style.opacity = "1";
@@ -223,110 +471,21 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             map.attributionControl.removeAttribution(
                 ESRI_SATELLITE_ATTRIBUTION,
             );
-            map.attributionControl.addAttribution(OPENFREEMAP_ATTRIBUTION);
+            map.attributionControl.addAttribution(
+                usingOsmFallback ? OSM_ATTRIBUTION : OPENFREEMAP_ATTRIBUTION,
+            );
+            syncMapSize();
         }
-    }, [baseMode]);
+    }, [baseMode, usingOsmFallback, syncMapSize]);
 
-    // Render INCAT Building Polygons (12% green fill, 1px outline, hover highlight, click to filter)
-    useEffect(() => {
-        const map = mapInstanceRef.current;
-        if (!map || !isOpen) return;
-
-        if (buildingsLayerRef.current) {
-            map.removeLayer(buildingsLayerRef.current);
-        }
-
-        const strokeColor =
-            baseMode === "satellite"
-                ? "#4ADE80"
-                : darkMode
-                  ? "#4ADE80"
-                  : "#234B38";
-        const fillColor =
-            baseMode === "satellite"
-                ? "#22C55E"
-                : darkMode
-                  ? "#356B52"
-                  : "#234B38";
-
-        const geoJsonLayer = L.geoJSON(INCAT_BUILDINGS_GEOJSON, {
-            style: (feature) => {
-                const isSelected = feature?.properties?.hubId === selectedHubId;
-                return {
-                    color: strokeColor,
-                    weight: isSelected ? 2 : 1,
-                    opacity: isSelected ? 0.95 : 0.7,
-                    fillColor,
-                    fillOpacity: isSelected ? 0.26 : 0.12,
-                    lineJoin: "round",
-                };
-            },
-            onEachFeature: (feature, layer) => {
-                const pathLayer = layer as L.Path;
-                const hubId = feature.properties.hubId;
-                const isSelected = hubId === selectedHubId;
-
-                layer.on("mouseover", () => {
-                    pathLayer.setStyle({
-                        fillOpacity: 0.24,
-                        weight: 1.5,
-                        opacity: 0.9,
-                    });
-                });
-
-                layer.on("mouseout", () => {
-                    pathLayer.setStyle({
-                        fillOpacity: isSelected ? 0.26 : 0.12,
-                        weight: isSelected ? 2 : 1,
-                        opacity: isSelected ? 0.95 : 0.7,
-                    });
-                });
-
-                layer.on("click", (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    setPopoverPost(null);
-                    onSelectHub(selectedHubId === hubId ? "ALL" : hubId);
-                });
-            },
-        }).addTo(map);
-
-        buildingsLayerRef.current = geoJsonLayer;
-    }, [isOpen, selectedHubId, darkMode, baseMode, onSelectHub]);
-
-    // Render 11px Muted Building Name Labels (shown only at zoom >= 18)
-    useEffect(() => {
-        const labelsGroup = labelsLayerRef.current;
-        if (!labelsGroup || !isOpen) return;
-
-        labelsGroup.clearLayers();
-        if (currentZoom < 18) return;
-
-        BUILDINGS.forEach((bldg) => {
-            const labelIcon = L.divIcon({
-                className: "incat-bldg-label-wrapper",
-                html: `<span class="incat-bldg-label ${
-                    baseMode === "satellite" ? "incat-bldg-label-sat" : ""
-                }">${bldg.shortLabel}</span>`,
-                iconSize: [120, 18],
-                iconAnchor: [60, 9],
-            });
-
-            const labelMarker = L.marker(bldg.labelPosition, {
-                icon: labelIcon,
-                interactive: false,
-            });
-            labelMarker.addTo(labelsGroup);
-        });
-    }, [isOpen, currentZoom, baseMode]);
-
-    // Render 10px Ringed Hub & Item Pins at Building Entrances
+    // Render 10px Ringed Hub & Item Pins + Permanent Zoom 18+ Hub Tooltip Labels
     useEffect(() => {
         const layerGroup = markersLayerRef.current;
         if (!layerGroup || !isOpen) return;
 
         layerGroup.clearLayers();
 
-        // 1. Campus Drop-off Hub Dots (INCAT Green #234B38) placed at building entrances
+        // 1. Campus Drop-off Hub Dots (INCAT Green #234B38) with permanent 11px tooltip at zoom 18+
         CAMPUS_HUBS.forEach((hub, idx) => {
             const isSelected = selectedHubId === hub.id;
             const delayMs = prefersReducedMotion ? 0 : Math.min(idx * 25, 180);
@@ -346,11 +505,14 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 icon: hubIcon,
                 zIndexOffset: 150,
             });
+
             marker.bindTooltip(`${hub.name}`, {
-                direction: "top",
-                offset: [0, -8],
-                className: "incat-map-tooltip",
+                permanent: true,
+                direction: "right",
+                offset: [8, 0],
+                className: "incat-hub-label",
             });
+
             marker.on("click", () => {
                 setPopoverPost(null);
                 onSelectHub(selectedHubId === hub.id ? "ALL" : hub.id);
@@ -358,7 +520,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             marker.addTo(layerGroup);
         });
 
-        // 2. Active Lost/Found Item Dots placed slightly offset from the building entrance
+        // 2. Active Lost/Found Item Dots placed slightly offset from the hub pin
         posts
             .filter((p) => p.status === "OPEN")
             .forEach((post, idx) => {
@@ -400,6 +562,10 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 
                 marker.addTo(layerGroup);
             });
+
+        window.requestAnimationFrame(() => {
+            updateHubLabelCollisions();
+        });
     }, [
         isOpen,
         posts,
@@ -407,16 +573,21 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         activePinPostId,
         popoverPost,
         prefersReducedMotion,
+        currentZoom,
         onSelectHub,
         onHighlightPost,
+        updateHubLabelCollisions,
     ]);
 
     const handleRecenter = () => {
         if (!mapInstanceRef.current) return;
-        mapInstanceRef.current.flyTo(INCAT_CENTER, 18, {
+        mapInstanceRef.current.flyTo(INCAT_CENTER, DEFAULT_ZOOM, {
             duration: prefersReducedMotion ? 0 : 0.8,
         });
     };
+
+    const shouldFilterRasterPane =
+        usingOsmFallback && darkMode && baseMode === "map";
 
     return (
         <AnimatePresence initial={false}>
@@ -430,17 +601,24 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                         duration: prefersReducedMotion ? 0.15 : 0.3,
                         ease: [0.22, 1, 0.36, 1],
                     }}
+                    onAnimationComplete={() => {
+                        syncMapSize();
+                    }}
                     className="overflow-hidden mb-6"
                 >
                     <div className="border border-border rounded-lg overflow-hidden bg-surface relative">
                         {/* Map Viewport: 300px on mobile, 420px on desktop */}
                         <div
                             ref={mapContainerRef}
-                            className="h-[300px] sm:h-[420px] w-full z-0"
+                            className={`h-75 sm:h-105 w-full z-0 ${
+                                shouldFilterRasterPane
+                                    ? "incat-osm-dark-raster"
+                                    : ""
+                            }`}
                         />
 
                         {/* Top-Right Controls: Map / Satellite Segmented Control + Recenter Button */}
-                        <div className="absolute top-3 right-3 z-[400] flex items-center gap-2">
+                        <div className="absolute top-3 right-3 z-400 flex items-center gap-2">
                             <div
                                 role="group"
                                 aria-label="Map view mode"
@@ -480,9 +658,9 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                             </button>
                         </div>
 
-                        {/* Active Building Filter Pill (when a building polygon is clicked) */}
+                        {/* Active Hub Filter Pill */}
                         {selectedHubId !== "ALL" && (
-                            <div className="absolute bottom-12 left-3 z-[400] inline-flex items-center gap-2 px-3 py-1.5 bg-surface border border-border rounded-md text-xs text-text">
+                            <div className="absolute bottom-12 left-3 z-400 inline-flex items-center gap-2 px-3 py-1.5 bg-surface border border-border rounded-md text-xs text-text">
                                 <span>
                                     Building: {getHubById(selectedHubId).name}
                                 </span>
@@ -513,7 +691,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                                         duration: 0.18,
                                         ease: [0.22, 1, 0.36, 1],
                                     }}
-                                    className="absolute bottom-12 left-3 right-3 sm:left-auto sm:right-3 sm:w-72 z-[400] bg-surface border border-border rounded-md p-3.5 shadow-popover"
+                                    className="absolute bottom-12 left-3 right-3 sm:left-auto sm:right-3 sm:w-72 z-400 bg-surface border border-border rounded-md p-3.5 shadow-popover"
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
