@@ -4,13 +4,13 @@ pages_build_output_dir = "dist"
 compatibility_date = "2025-02-14"
 
 [[d1_databases]]
-binding = "DB"
+binding = "findr_incat_db"
 database_name = "findr-incat-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "f2ce4053-b951-4800-b991-fd9f8d38bc72"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
-binding = "BUCKET"
+binding = "findr_incat_media"
 bucket_name = "findr-incat-media"
 
 [vars]
