@@ -1,7 +1,23 @@
-// src/types.ts
-import type { CampusHubName, CampusLocation } from "./data/hubs";
+import type { CampusHubName } from "./data/hubs";
+export { CAMPUS_HUB_NAMES, type CampusHubName } from "./data/hubs";
 
-export type { CampusHubName, CampusLocation };
+export type LanguageCode = "en" | "tl" | "ilo";
+
+export type PostType = "lost" | "found";
+export type PostStatus = "open" | "claimed" | "returned";
+
+export type ItemCategory =
+    | "ids_cards"
+    | "wallets_cash"
+    | "calculators"
+    | "electronics"
+    | "tumblers_containers"
+    | "keys_lanyards"
+    | "bags_pouches"
+    | "books_notebooks"
+    | "apparel_umbrellas"
+    | "shop_tools"
+    | "other";
 
 export type ContactMethodKind =
     | "messenger"
@@ -15,32 +31,33 @@ export type ContactMethodKind =
 export interface ContactMethod {
     kind: ContactMethodKind;
     value: string;
-    visible: boolean;
     label?: string;
+    visible: boolean;
+}
+
+export interface NotifyChannelConfig {
+    kind: "email" | "telegram" | "messenger";
+    value: string;
 }
 
 export interface ContactConfig {
     methods: ContactMethod[];
     relayMode: boolean;
     dropOffHub?: CampusHubName;
-    notifyWebhookOrEmail?: string;
+    notifyChannel?: NotifyChannelConfig;
 }
 
-export type ItemCategory =
-    | "ids_cards"
-    | "wallets_cash"
-    | "electronics"
-    | "tumblers_containers"
-    | "calculators_tools"
-    | "keys_lanyards"
-    | "bags_apparel"
-    | "books_notebooks"
-    | "other";
+export interface CampusLocation {
+    id: string;
+    name: CampusHubName | string;
+    buildingCode: string;
+    isDropOffHub: boolean;
+    lat: number;
+    lng: number;
+    description: string;
+}
 
-export type PostType = "lost" | "found";
-export type PostStatus = "open" | "claimed" | "returned";
-
-export interface PostItem {
+export interface Post {
     id: string;
     type: PostType;
     title: string;
@@ -48,28 +65,29 @@ export interface PostItem {
     category: ItemCategory;
     locationId: string;
     locationName: string;
-    building: string;
     lat: number;
     lng: number;
-    imageKeys: string[];
+    imageUrls: string[];
     contact: ContactConfig;
     status: PostStatus;
     linkedTagCode?: string | null;
-    claimQuestion?: string | null;
-    hasClaimProtection: boolean;
+    hasClaimQuestion: boolean;
+    claimQuestionPrompt?: string | null;
+    occurredAt: string;
     createdAt: string;
     resolvedAt?: string | null;
 }
 
-export interface TagItem {
+export interface Tag {
     id: string;
     publicCode: string;
     label: string;
     itemType: ItemCategory;
-    photoKey?: string | null;
-    contact: ContactConfig;
+    photoUrl?: string | null;
+    contactConfig: ContactConfig;
     relayMode: boolean;
     lostMode: boolean;
+    lostNote?: string | null;
     scanCount: number;
     lastScannedAt?: string | null;
     unreadMessageCount: number;
@@ -81,46 +99,106 @@ export interface PublicTagView {
     publicCode: string;
     label: string;
     itemType: ItemCategory;
-    photoKey?: string | null;
+    photoUrl?: string | null;
     relayMode: boolean;
     lostMode: boolean;
+    lostNote?: string | null;
     dropOffHub?: CampusHubName;
-    visibleMethods: Array<Pick<ContactMethod, "kind" | "value" | "label">>;
-    requiresTurnstileToReveal: boolean;
-    revoked: boolean;
+    visibleMethodsCount: number;
+    visibleMethods?: ContactMethod[];
+    isRevoked: boolean;
 }
 
-export interface RelayMessage {
+export interface ScanEvent {
+    id: string;
+    tagId: string;
+    scannedAt: string;
+    approxLocation?: {
+        lat: number;
+        lng: number;
+        label?: string;
+    } | null;
+}
+
+export interface TagMessage {
     id: string;
     tagId: string;
     body: string;
     finderContact?: string | null;
-    approxLocation?: string | null;
+    foundAtHub?: CampusHubName | null;
+    approxLocation?: {
+        lat: number;
+        lng: number;
+    } | null;
     createdAt: string;
     readAt?: string | null;
 }
 
-export interface ScanEventItem {
-    id: string;
-    tagId: string;
-    scannedAt: string;
-    approxLocation?: string | null;
-}
-
-export interface WallStats {
-    missing: number;
-    found: number;
-    returned: number;
-}
-
-export interface PostFilterParams {
+export interface PostFilters {
     type?: "all" | PostType;
     status?: "all" | PostStatus;
     category?: "all" | ItemCategory;
-    locationId?: string;
+    locationId?: "all" | string;
     q?: string;
     dateFrom?: string;
     dateTo?: string;
     limit?: number;
-    offset?: number;
+    cursor?: string;
+}
+
+export interface PaginatedPostsResponse {
+    items: Post[];
+    nextCursor: string | null;
+    stats: {
+        missingCount: number;
+        foundCount: number;
+        returnedCount: number;
+    };
+}
+
+export interface CreatePostInput {
+    type: PostType;
+    title: string;
+    description: string;
+    category: ItemCategory;
+    locationId: string;
+    lat: number;
+    lng: number;
+    imageKeys: string[];
+    contact: ContactConfig;
+    linkedTagCode?: string;
+    claimQuestionPrompt?: string;
+    claimAnswer?: string;
+    occurredAt?: string;
+    turnstileToken?: string;
+}
+
+export interface CreatePostResponse {
+    post: Post;
+    editKey: string;
+    manageUrl: string;
+}
+
+export interface CreateTagInput {
+    label: string;
+    itemType: ItemCategory;
+    photoKey?: string;
+    contactConfig: ContactConfig;
+    lostMode?: boolean;
+    lostNote?: string;
+    turnstileToken?: string;
+}
+
+export interface CreateTagResponse {
+    tag: Tag;
+    manageKey: string;
+    manageUrl: string;
+}
+
+export interface ReportPayload {
+    targetType: "post" | "tag";
+    targetId: string;
+    reason: string;
+    details?: string;
+    turnstileToken?: string;
 }

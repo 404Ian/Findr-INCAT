@@ -1,291 +1,340 @@
-// src/components/ContactMatrix.tsx
 import React from "react";
-import { INCAT_HUBS, type CampusHubName } from "../data/hubs";
-import type { ContactConfig, ContactMethod, ContactMethodKind } from "../types";
+import {
+    CAMPUS_HUB_NAMES,
+    type CampusHubName,
+    type ContactConfig,
+    type ContactMethod,
+    type ContactMethodKind,
+} from "../types";
 
-interface ContactMatrixProps {
+export interface ContactMatrixProps {
     value: ContactConfig;
     onChange: (next: ContactConfig) => void;
-    language?: "en" | "tl";
+    showDropOffHub?: boolean;
+    compact?: boolean;
 }
 
-const METHOD_META: Record<
-    ContactMethodKind,
-    { label: string; placeholder: string; prefixHint: string }
-> = {
-    messenger: {
+interface MethodMeta {
+    kind: ContactMethodKind;
+    label: string;
+    placeholder: string;
+    helper: string;
+}
+
+const AVAILABLE_METHODS: readonly MethodMeta[] = [
+    {
+        kind: "messenger",
         label: "Messenger",
-        placeholder: "m.me/juan.delacruz",
-        prefixHint: "Username or m.me link",
+        placeholder: "m.me/your.username or profile name",
+        helper: "Opens a direct Messenger chat thread",
     },
-    phone: {
+    {
+        kind: "phone",
         label: "Phone Call",
         placeholder: "0917 123 4567",
-        prefixHint: "PH mobile number",
+        helper: "One-tap dial on mobile",
     },
-    sms: {
-        label: "SMS Text",
+    {
+        kind: "sms",
+        label: "SMS / Text",
         placeholder: "0917 123 4567",
-        prefixHint: "SMS number",
+        helper: "Pre-filled SMS message",
     },
-    email: {
+    {
+        kind: "email",
         label: "Email",
-        placeholder: "student@incat.edu.ph",
-        prefixHint: "Direct email address",
+        placeholder: "name@example.com",
+        helper: "Opens mail app with item subject",
     },
-    facebook: {
+    {
+        kind: "facebook",
         label: "Facebook Profile",
-        placeholder: "facebook.com/juan.incat",
-        prefixHint: "Profile URL or name",
+        placeholder: "facebook.com/your.profile",
+        helper: "Profile link for campus message requests",
     },
-    instagram: {
-        label: "Instagram",
-        placeholder: "@juan.incat",
-        prefixHint: "IG handle",
-    },
-    telegram: {
+    {
+        kind: "telegram",
         label: "Telegram",
-        placeholder: "@juan_incat",
-        prefixHint: "Telegram username",
+        placeholder: "@username",
+        helper: "Opens t.me/@username",
     },
-};
+] as const;
 
-const DROP_OFF_HUBS = INCAT_HUBS.filter((h) => h.type === "dropoff");
+export const DEFAULT_CONTACT_CONFIG: ContactConfig = {
+    relayMode: true,
+    dropOffHub: "Guard House",
+    methods: [
+        { kind: "messenger", value: "", visible: false },
+        { kind: "phone", value: "", visible: false },
+    ],
+};
 
 export const ContactMatrix: React.FC<ContactMatrixProps> = ({
     value,
     onChange,
-    language = "en",
+    showDropOffHub = true,
+    compact = false,
 }) => {
-    const handleToggleRelay = (relayMode: boolean) => {
-        onChange({ ...value, relayMode });
-    };
+    const getMethod = (kind: ContactMethodKind): ContactMethod | undefined =>
+        value.methods.find((m) => m.kind === kind);
 
-    const handleHubChange = (dropOffHub: CampusHubName | "") => {
+    const upsertMethod = (
+        kind: ContactMethodKind,
+        patch: Partial<ContactMethod>,
+    ) => {
+        const existing = getMethod(kind);
+        let nextMethods: ContactMethod[];
+
+        if (existing) {
+            nextMethods = value.methods.map((m) =>
+                m.kind === kind ? { ...m, ...patch } : m,
+            );
+        } else {
+            nextMethods = [
+                ...value.methods,
+                {
+                    kind,
+                    value: patch.value ?? "",
+                    visible: patch.visible ?? !value.relayMode,
+                    label: patch.label,
+                },
+            ];
+        }
+
         onChange({
             ...value,
-            dropOffHub: dropOffHub === "" ? undefined : dropOffHub,
+            methods: nextMethods,
         });
     };
 
-    const handleMethodChange = (
-        index: number,
-        patch: Partial<ContactMethod>,
-    ) => {
-        const nextMethods = value.methods.map((method, i) =>
-            i === index ? { ...method, ...patch } : method,
-        );
-        onChange({ ...value, methods: nextMethods });
+    const removeMethod = (kind: ContactMethodKind) => {
+        onChange({
+            ...value,
+            methods: value.methods.filter((m) => m.kind !== kind),
+        });
     };
 
-    const handleAddMethod = (kind: ContactMethodKind) => {
-        const nextMethods: ContactMethod[] = [
-            ...value.methods,
-            { kind, value: "", visible: !value.relayMode },
-        ];
-        onChange({ ...value, methods: nextMethods });
+    const handleRelayToggle = (relayMode: boolean) => {
+        onChange({
+            ...value,
+            relayMode,
+        });
     };
 
-    const handleRemoveMethod = (index: number) => {
-        const nextMethods = value.methods.filter((_, i) => i !== index);
-        onChange({ ...value, methods: nextMethods });
+    const handleDropOffChange = (hub: CampusHubName | "") => {
+        onChange({
+            ...value,
+            dropOffHub: hub === "" ? undefined : hub,
+        });
     };
 
-    const visibleCount = value.methods.filter(
+    const publicMethods = value.methods.filter(
         (m) => m.visible && m.value.trim().length > 0,
-    ).length;
+    );
 
     return (
-        <div className="space-y-4 rounded-xl border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/60">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
-                        {language === "tl"
-                            ? "Privacy at Paraan ng Pakikipag-ugnayan"
-                            : "Privacy & Contact Controls"}
-                    </h4>
-                    <p className="text-xs text-stone-600 dark:text-stone-400">
-                        {language === "tl"
-                            ? "Piliin kung aling detalye ang makikita kapag na-scan ang QR o binuksan ang post."
-                            : "Choose what finders can see when they scan your tag or view this post."}
+        <div className="space-y-4 rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-4 text-sm">
+            {/* Relay Mode Banner */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-emerald-900/50 bg-emerald-950/20 p-3.5">
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                        <span className="font-medium text-neutral-100">
+                            Anonymous Relay Messaging (Recommended)
+                        </span>
+                    </div>
+                    <p className="text-xs leading-relaxed text-neutral-400">
+                        Finders can message you directly inside Findr without
+                        seeing your phone number or social profile. You read
+                        messages in <strong>My items</strong>.
                     </p>
                 </div>
-
-                <label className="inline-flex cursor-pointer items-center gap-2 self-start rounded-lg border border-emerald-700/20 bg-emerald-950/5 px-3 py-1.5 text-xs font-medium text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-200">
+                <label className="relative inline-flex cursor-pointer items-center">
                     <input
                         type="checkbox"
+                        className="peer sr-only"
                         checked={value.relayMode}
-                        onChange={(e) => handleToggleRelay(e.target.checked)}
-                        className="h-4 w-4 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600"
+                        onChange={(e) => handleRelayToggle(e.target.checked)}
+                        aria-label="Enable anonymous relay messaging"
                     />
-                    <span>
-                        {language === "tl"
-                            ? "Relay Mode (Nakatago ang numero)"
-                            : "Relay Mode (Hide personal contact)"}
-                    </span>
+                    <div className="h-6 w-11 rounded-full bg-neutral-700 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-emerald-600 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-400" />
                 </label>
             </div>
 
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-                {value.relayMode ? (
-                    <span>
-                        <strong>Private Relay Active:</strong> Your phone number
-                        and social links stay hidden. Finders send messages
-                        through a secure form delivered straight to your{" "}
-                        <em>My items</em> tab.
-                    </span>
-                ) : (
-                    <span>
-                        <strong>Public Reveal Notice:</strong> {visibleCount}{" "}
-                        contact method(s) marked visible will be shown to
-                        finders after a Cloudflare Turnstile anti-scraper check.
-                    </span>
-                )}
-            </div>
+            {/* Preferred Campus Drop-off Hub */}
+            {showDropOffHub && (
+                <div className="space-y-1.5">
+                    <label
+                        htmlFor="contact-dropoff-hub"
+                        className="block text-xs font-medium tracking-wide text-neutral-300 uppercase"
+                    >
+                        Suggested INCAT Drop-off Hub
+                    </label>
+                    <select
+                        id="contact-dropoff-hub"
+                        value={value.dropOffHub ?? ""}
+                        onChange={(e) =>
+                            handleDropOffChange(
+                                e.target.value as CampusHubName | "",
+                            )
+                        }
+                        className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                    >
+                        <option value="">No specific hub preference</option>
+                        {CAMPUS_HUB_NAMES.map((hubName) => (
+                            <option key={hubName} value={hubName}>
+                                {hubName}
+                            </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-neutral-400">
+                        Shown to the finder so they can leave your item safely
+                        on campus.
+                    </p>
+                </div>
+            )}
 
-            <div>
-                <label
-                    htmlFor="dropoff-hub-select"
-                    className="block text-xs font-medium text-stone-700 dark:text-stone-300"
-                >
-                    {language === "tl"
-                        ? "Inirerekomendang Drop-off Hub sa INCAT"
-                        : "Preferred INCAT Drop-off Hub"}
-                </label>
-                <select
-                    id="dropoff-hub-select"
-                    value={value.dropOffHub ?? ""}
-                    onChange={(e) =>
-                        handleHubChange(e.target.value as CampusHubName | "")
-                    }
-                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-700/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
-                >
-                    <option value="">No specific hub preference</option>
-                    {DROP_OFF_HUBS.map((hub) => (
-                        <option key={hub.id} value={hub.name}>
-                            {hub.name} — {hub.building}
-                        </option>
-                    ))}
-                </select>
-            </div>
-
+            {/* Direct Contact Channels */}
             <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-stone-700 dark:text-stone-300">
-                        Contact Methods ({value.methods.length})
+                    <span className="text-xs font-medium tracking-wide text-neutral-300 uppercase">
+                        Direct Contact Channels (Per-Channel Visibility)
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                        {(
-                            [
-                                "messenger",
-                                "phone",
-                                "sms",
-                                "email",
-                            ] as ContactMethodKind[]
-                        ).map((kind) => (
-                            <button
-                                key={kind}
-                                type="button"
-                                onClick={() => handleAddMethod(kind)}
-                                className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-stone-700 transition hover:border-emerald-700 hover:text-emerald-800 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
-                            >
-                                + {METHOD_META[kind].label}
-                            </button>
-                        ))}
-                    </div>
+                    <span className="text-xs text-neutral-400">
+                        Protected by Turnstile anti-scrape check
+                    </span>
                 </div>
 
-                {value.methods.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-stone-300 p-3 text-center text-xs text-stone-500 dark:border-stone-700 dark:text-stone-400">
-                        No direct contact methods added. Finders will use the
-                        anonymous Relay Message box and drop-off hub
-                        instructions.
-                    </p>
-                ) : (
-                    <div className="space-y-2">
-                        {value.methods.map((method, idx) => {
-                            const meta = METHOD_META[method.kind];
-                            return (
-                                <div
-                                    key={`${method.kind}-${idx}`}
-                                    className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2.5 sm:flex-row sm:items-center dark:border-stone-800 dark:bg-stone-950"
-                                >
-                                    <select
-                                        aria-label="Contact type"
-                                        value={method.kind}
-                                        onChange={(e) =>
-                                            handleMethodChange(idx, {
-                                                kind: e.target
-                                                    .value as ContactMethodKind,
-                                            })
-                                        }
-                                        className="rounded-md border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-medium text-stone-800 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200"
-                                    >
-                                        {Object.entries(METHOD_META).map(
-                                            ([k, v]) => (
-                                                <option key={k} value={k}>
-                                                    {v.label}
-                                                </option>
-                                            ),
-                                        )}
-                                    </select>
+                <div
+                    className={
+                        compact
+                            ? "grid grid-cols-1 gap-2.5"
+                            : "grid grid-cols-1 gap-3 sm:grid-cols-2"
+                    }
+                >
+                    {AVAILABLE_METHODS.map((meta) => {
+                        const current = getMethod(meta.kind);
+                        const isEnabled = Boolean(current);
+                        const isVisible = current?.visible ?? false;
 
-                                    <input
-                                        type="text"
-                                        value={method.value}
-                                        onChange={(e) =>
-                                            handleMethodChange(idx, {
-                                                value: e.target.value,
-                                            })
-                                        }
-                                        placeholder={meta.placeholder}
-                                        aria-label={`${meta.label} value`}
-                                        className="flex-1 rounded-md border border-stone-300 bg-transparent px-3 py-1.5 text-sm text-stone-900 focus:border-emerald-700 focus:outline-none dark:border-stone-700 dark:text-stone-100"
-                                    />
-
-                                    <div className="flex items-center justify-between gap-2 sm:justify-end">
-                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400">
-                                            <input
-                                                type="checkbox"
-                                                checked={
-                                                    method.visible &&
-                                                    !value.relayMode
+                        return (
+                            <div
+                                key={meta.kind}
+                                className={`rounded-lg border p-3 transition-colors ${
+                                    isEnabled
+                                        ? "border-neutral-700 bg-neutral-950/90"
+                                        : "border-neutral-800/70 bg-neutral-950/40"
+                                }`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className="flex cursor-pointer items-center gap-2 font-medium text-neutral-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={isEnabled}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    upsertMethod(meta.kind, {
+                                                        value: "",
+                                                        visible: true,
+                                                    });
+                                                } else {
+                                                    removeMethod(meta.kind);
                                                 }
-                                                disabled={value.relayMode}
-                                                onChange={(e) =>
-                                                    handleMethodChange(idx, {
-                                                        visible:
-                                                            e.target.checked,
-                                                    })
-                                                }
-                                                className="h-3.5 w-3.5 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600 disabled:opacity-40"
-                                            />
-                                            <span>
-                                                {value.relayMode
-                                                    ? "Hidden by Relay"
-                                                    : method.visible
-                                                      ? "Public"
-                                                      : "Hidden"}
-                                            </span>
-                                        </label>
+                                            }}
+                                            className="h-4 w-4 rounded border-neutral-600 text-emerald-600 focus:ring-emerald-500"
+                                        />
+                                        <span>{meta.label}</span>
+                                    </label>
 
+                                    {isEnabled && (
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                handleRemoveMethod(idx)
+                                                upsertMethod(meta.kind, {
+                                                    visible: !isVisible,
+                                                })
                                             }
-                                            aria-label={`Remove ${meta.label}`}
-                                            className="rounded p-1 text-xs text-stone-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                                                isVisible
+                                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                                    : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+                                            }`}
+                                            title={
+                                                isVisible
+                                                    ? "Publicly visible after human verification"
+                                                    : "Hidden from public page"
+                                            }
                                         >
-                                            Remove
+                                            {isVisible
+                                                ? "Visible on scan"
+                                                : "Hidden"}
                                         </button>
-                                    </div>
+                                    )}
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
+
+                                {isEnabled && (
+                                    <div className="mt-2.5 space-y-1">
+                                        <input
+                                            type="text"
+                                            value={current?.value ?? ""}
+                                            onChange={(e) =>
+                                                upsertMethod(meta.kind, {
+                                                    value: e.target.value,
+                                                })
+                                            }
+                                            placeholder={meta.placeholder}
+                                            aria-label={`${meta.label} contact value`}
+                                            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-500 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                                        />
+                                        <p className="text-[11px] text-neutral-500">
+                                            {meta.helper}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Live Public Disclosure Summary */}
+            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">
+                <div className="font-semibold text-neutral-200">
+                    What finders will see publicly:
+                </div>
+                <ul className="mt-1.5 list-inside list-disc space-y-1 text-neutral-400">
+                    {value.relayMode && (
+                        <li>
+                            An in-app <strong>Message the owner</strong> relay
+                            form (your real contact stays private).
+                        </li>
+                    )}
+                    {value.dropOffHub && (
+                        <li>
+                            Suggested drop-off at{" "}
+                            <strong>{value.dropOffHub}</strong>.
+                        </li>
+                    )}
+                    {publicMethods.length > 0 ? (
+                        <li>
+                            Direct buttons for{" "}
+                            <strong>
+                                {publicMethods
+                                    .map((m) => m.kind.toUpperCase())
+                                    .join(", ")}
+                            </strong>{" "}
+                            (revealed only after a human Turnstile check).
+                        </li>
+                    ) : (
+                        <li>
+                            No direct phone numbers or social links are publicly
+                            exposed.
+                        </li>
+                    )}
+                </ul>
             </div>
         </div>
     );
 };
+
+export default ContactMatrix;

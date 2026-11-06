@@ -15,3 +15,4 @@ bucket_name = "findr-incat-media"
 
 [vars]
 PUBLIC_APP_NAME = "Findr INCAT"
+PUBLIC_ORIGIN = "https://myfindr.pages.dev"

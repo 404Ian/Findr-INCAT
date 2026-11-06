@@ -1,114 +1,149 @@
-// src/data/hubs.ts
-export const INCAT_CAMPUS_CENTER = {
-    lat: 18.1988,
-    lng: 120.5936,
-    zoom: 18,
+export const INCAT_CENTER = {
+    lat: 18.1966,
+    lng: 120.5927,
+    zoom: 17,
 } as const;
 
-export const INCAT_HUBS = [
-    {
-        id: "hub-guard-house",
-        name: "Guard House",
-        building: "Main Gate (P. Gomez St.)",
-        type: "dropoff",
-        lat: 18.19845,
-        lng: 120.59315,
-        description:
-            "24/7 main entrance security desk and primary drop-off point.",
-    },
-    {
-        id: "hub-guidance",
-        name: "Guidance Office",
-        building: "Administration Building",
-        type: "dropoff",
-        lat: 18.19878,
-        lng: 120.59348,
-        description: "Student affairs and lost ID / valuable item safekeeping.",
-    },
-    {
-        id: "hub-ssg-office",
-        name: "SSG / Student Center",
-        building: "Student Center Pavilion",
-        type: "dropoff",
-        lat: 18.19895,
-        lng: 120.59372,
-        description:
-            "Supreme Student Government desk for student-turned-in items.",
-    },
-    {
-        id: "hub-ict-lab",
-        name: "ICT / Computer Lab",
-        building: "TVL & ICT Building, 2F",
-        type: "lab",
-        lat: 18.19912,
-        lng: 120.59395,
-        description: "Computer programming and networking laboratories.",
-    },
-    {
-        id: "hub-electronics-lab",
-        name: "Electronics & Electrical Lab",
-        building: "Industrial Arts Building",
-        type: "lab",
-        lat: 18.19925,
-        lng: 120.59355,
-        description: "EIM and EPAS workshop rooms.",
-    },
-    {
-        id: "hub-automotive-shop",
-        name: "Automotive & Welding Shop",
-        building: "North Trade Complex",
-        type: "lab",
-        lat: 18.19942,
-        lng: 120.59328,
-        description: "Automotive servicing and SMAW trade bays.",
-    },
-    {
-        id: "hub-food-trades",
-        name: "Food Trades & Garments Lab",
-        building: "Home Economics Building",
-        type: "lab",
-        lat: 18.19862,
-        lng: 120.59388,
-        description: "Bread & Pastry, Cookery, and Dressmaking laboratories.",
-    },
-    {
-        id: "hub-library",
-        name: "Campus Library",
-        building: "Academic Building, 2F",
-        type: "facility",
-        lat: 18.19885,
-        lng: 120.59412,
-        description: "Reading hall and study tables.",
-    },
-    {
-        id: "hub-gymnasium",
-        name: "INCAT Covered Court",
-        building: "Campus Quadrangle",
-        type: "facility",
-        lat: 18.19892,
-        lng: 120.59362,
-        description: "Main assembly court, bleachers, and stage area.",
-    },
-    {
-        id: "hub-canteen",
-        name: "Campus Canteen",
-        building: "South Wing",
-        type: "facility",
-        lat: 18.19852,
-        lng: 120.59358,
-        description: "Main dining area and food stalls.",
-    },
+export const CAMPUS_HUB_NAMES = [
+    "Guard House",
+    "Guidance Office",
+    "SSG / Student Affairs Office",
+    "ICT / Computer Lab",
+    "Electronics & Electrical Lab",
+    "Automotive & Mechanical Shop",
+    "Garments & Cosmetology Lab",
+    "Food Trades / Culinary Lab",
+    "Drafting & Civil Tech Studio",
+    "Main Library",
+    "School Canteen",
+    "Covered Court / Gymnasium",
 ] as const;
 
-export type CampusHubName = (typeof INCAT_HUBS)[number]["name"];
-export type CampusHubId = (typeof INCAT_HUBS)[number]["id"];
+export type CampusHubName = (typeof CAMPUS_HUB_NAMES)[number];
 
-export interface CampusLocation {
+export interface CampusHubSeed {
     id: string;
-    name: CampusHubName | string;
-    building: string;
-    type: "dropoff" | "lab" | "facility";
+    name: CampusHubName;
+    buildingCode: string;
+    isDropOffHub: boolean;
     lat: number;
     lng: number;
     description: string;
 }
+
+export const CAMPUS_HUBS: readonly CampusHubSeed[] = [
+    {
+        id: "loc-guard-house",
+        name: "Guard House",
+        buildingCode: "GATE-1",
+        isDropOffHub: true,
+        lat: 18.1961,
+        lng: 120.5923,
+        description:
+            "Main gate security post along P. Gomez St. Open 24/7 for item drop-off.",
+    },
+    {
+        id: "loc-guidance",
+        name: "Guidance Office",
+        buildingCode: "ADMIN-1F",
+        isDropOffHub: true,
+        lat: 18.1965,
+        lng: 120.5926,
+        description:
+            "Ground floor, Administration Building. Official safekeeping for IDs and valuables.",
+    },
+    {
+        id: "loc-ssg",
+        name: "SSG / Student Affairs Office",
+        buildingCode: "OSA-1F",
+        isDropOffHub: true,
+        lat: 18.1967,
+        lng: 120.5925,
+        description:
+            "Supreme Student Government office near the student quadrangle.",
+    },
+    {
+        id: "loc-ict-lab",
+        name: "ICT / Computer Lab",
+        buildingCode: "ICT-2F",
+        isDropOffHub: true,
+        lat: 18.1969,
+        lng: 120.5929,
+        description:
+            "2nd floor ICT Building. Check with the lab technician for flash drives and gadgets.",
+    },
+    {
+        id: "loc-electronics-lab",
+        name: "Electronics & Electrical Lab",
+        buildingCode: "TECH-A",
+        isDropOffHub: true,
+        lat: 18.1971,
+        lng: 120.5924,
+        description:
+            "Trade & Tech Building A. Multimeters, calculators, and lab tools.",
+    },
+    {
+        id: "loc-automotive-shop",
+        name: "Automotive & Mechanical Shop",
+        buildingCode: "SHOP-B",
+        isDropOffHub: true,
+        lat: 18.1972,
+        lng: 120.5931,
+        description: "North Workshop Complex.",
+    },
+    {
+        id: "loc-garments-lab",
+        name: "Garments & Cosmetology Lab",
+        buildingCode: "TVL-1F",
+        isDropOffHub: true,
+        lat: 18.1964,
+        lng: 120.593,
+        description: "TVL Home Economics wing, 1st floor.",
+    },
+    {
+        id: "loc-food-trades",
+        name: "Food Trades / Culinary Lab",
+        buildingCode: "TVL-2F",
+        isDropOffHub: true,
+        lat: 18.1963,
+        lng: 120.5932,
+        description: "Baking and culinary arts laboratory.",
+    },
+    {
+        id: "loc-drafting-studio",
+        name: "Drafting & Civil Tech Studio",
+        buildingCode: "TECH-C",
+        isDropOffHub: true,
+        lat: 18.197,
+        lng: 120.5927,
+        description: "T-squares, canisters, and engineering calculators.",
+    },
+    {
+        id: "loc-library",
+        name: "Main Library",
+        buildingCode: "LIB-2F",
+        isDropOffHub: true,
+        lat: 18.1966,
+        lng: 120.5928,
+        description:
+            "Circulation desk holds notebooks, books, and umbrellas left at tables.",
+    },
+    {
+        id: "loc-canteen",
+        name: "School Canteen",
+        buildingCode: "CANT",
+        isDropOffHub: false,
+        lat: 18.1962,
+        lng: 120.5927,
+        description: "Main student dining area.",
+    },
+    {
+        id: "loc-covered-court",
+        name: "Covered Court / Gymnasium",
+        buildingCode: "GYM",
+        isDropOffHub: false,
+        lat: 18.1968,
+        lng: 120.5922,
+        description: "Campus covered court and bleachers.",
+    },
+] as const;
