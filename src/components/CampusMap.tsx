@@ -1,783 +1,687 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { L, maplibregl } from "../lib/setupMapLibre";
-import "@maplibre/maplibre-gl-leaflet";
-import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import { Crosshair, X, ArrowUpRight } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import * as L from "leaflet";
 import {
-    CAMPUS_HUBS,
-    INCAT_CENTER,
-    INCAT_MAX_BOUNDS,
-    getHubById,
-} from "../data/hubs";
-import type { PostItem } from "../types";
+    Compass,
+    ExternalLink,
+    Layers,
+    LocateFixed,
+    MapPin,
+    Navigation,
+    ShieldCheck,
+    X,
+} from "lucide-react";
+import { CAMPUS_HUBS, INCAT_CENTER } from "../data/hubs";
+import type { CampusLocation, Post } from "../types";
 
-interface MaplibreGLLayer extends L.Layer {
-    getMaplibreMap(): maplibregl.Map;
+export interface CampusMapProps {
+    /** Primary posts list */
+    posts?: Post[];
+    /** Legacy alias if App.tsx passes `items` instead of `posts` */
+    items?: Post[];
+    /** Optional locations list from /api/locations; falls back to CAMPUS_HUBS */
+    locations?: CampusLocation[];
+    /** Currently selected post ID */
+    selectedPostId?: string | null;
+    /** Callback when a user clicks a post marker or detail action */
+    onSelectPost?: (post: Post) => void;
+    /** Legacy alias if App.tsx passes `onSelectItem` */
+    onSelectItem?: (post: Post) => void;
+    /** Interactive coordinate picker mode (used inside PostModal) */
+    interactivePicker?: boolean;
+    pickedCoords?: { lat: number; lng: number } | null;
+    onPickCoords?: (coords: {
+        lat: number;
+        lng: number;
+        nearestHubId?: string;
+        nearestHubName?: string;
+    }) => void;
+    className?: string;
+    heightClassName?: string;
 }
 
-type BaseMapMode = "map" | "satellite";
-
-interface CampusMapProps {
-    isOpen: boolean;
-    darkMode: boolean;
-    posts: PostItem[];
-    selectedHubId: string;
-    activePinPostId: string | null;
-    onSelectHub: (hubId: string) => void;
-    onHighlightPost: (post: PostItem) => void;
-    onOpenPostDetail: (post: PostItem) => void;
+interface ClusteredGroup {
+    key: string;
+    lat: number;
+    lng: number;
+    posts: Post[];
 }
 
-const MIN_ZOOM = 16;
-const MAX_ZOOM = 20;
-const DEFAULT_ZOOM = 18;
-const FALLBACK_TIMEOUT_MS = 3000;
+const LEAFLET_CSS_ID = "findr-leaflet-css";
 
-const OPENFREEMAP_LIBERTY_STYLE =
-    "https://tiles.openfreemap.org/styles/liberty";
-const OPENFREEMAP_DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+function ensureLeafletStylesheet(): void {
+    if (typeof document === "undefined") return;
+    if (document.getElementById(LEAFLET_CSS_ID)) return;
+    const link = document.createElement("link");
+    link.id = LEAFLET_CSS_ID;
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.crossOrigin = "";
+    document.head.appendChild(link);
+}
 
-const OSM_RASTER_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
+function haversineMeters(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+): number {
+    const R = 6371e3;
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-const ESRI_WORLD_IMAGERY_TILES =
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-
-const OPENFREEMAP_ATTRIBUTION =
-    '<a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
-
-const ESRI_SATELLITE_ATTRIBUTION =
-    "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community";
-
-function isWebGLSupported(): boolean {
-    if (typeof window === "undefined") return false;
-    try {
-        const canvas = document.createElement("canvas");
-        return Boolean(
-            window.WebGLRenderingContext &&
-            (canvas.getContext("webgl2") ||
-                canvas.getContext("webgl") ||
-                canvas.getContext("experimental-webgl")),
-        );
-    } catch {
-        return false;
-    }
+function formatRelativeTime(iso: string): string {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    if (Number.isNaN(diffMs)) return "Recently";
+    const mins = Math.max(1, Math.floor(diffMs / 60000));
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
 }
 
 export const CampusMap: React.FC<CampusMapProps> = ({
-    isOpen,
-    darkMode,
     posts,
-    selectedHubId,
-    activePinPostId,
-    onSelectHub,
-    onHighlightPost,
-    onOpenPostDetail,
+    items,
+    locations,
+    selectedPostId,
+    onSelectPost,
+    onSelectItem,
+    interactivePicker = false,
+    pickedCoords = null,
+    onPickCoords,
+    className = "",
+    heightClassName = "h-[440px]",
 }) => {
-    const prefersReducedMotion = useReducedMotion();
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
-    const glLayerRef = useRef<MaplibreGLLayer | null>(null);
-    const osmFallbackLayerRef = useRef<L.TileLayer | null>(null);
-    const satelliteLayerRef = useRef<L.TileLayer | null>(null);
     const markersLayerRef = useRef<L.LayerGroup | null>(null);
-    const activeStyleRef = useRef<string | null>(null);
+    const hubsLayerRef = useRef<L.LayerGroup | null>(null);
+    const pickerMarkerRef = useRef<L.Marker | null>(null);
+    const userLocationMarkerRef = useRef<L.CircleMarker | null>(null);
 
-    const [baseMode, setBaseMode] = useState<BaseMapMode>("map");
-    const [usingOsmFallback, setUsingOsmFallback] = useState<boolean>(false);
-    const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_ZOOM);
-    const [popoverPost, setPopoverPost] = useState<PostItem | null>(null);
+    const allPosts = useMemo(() => posts ?? items ?? [], [posts, items]);
+    const allHubs: readonly CampusLocation[] = useMemo(
+        () => (locations && locations.length > 0 ? locations : CAMPUS_HUBS),
+        [locations],
+    );
 
-    const baseModeRef = useRef<BaseMapMode>(baseMode);
-    baseModeRef.current = baseMode;
+    const [activeCluster, setActiveCluster] = useState<ClusteredGroup | null>(
+        null,
+    );
+    const [activePostIndex, setActivePostIndex] = useState(0);
+    const [showHubLabels, setShowHubLabels] = useState(true);
+    const [locatingUser, setLocatingUser] = useState(false);
+    const [geoError, setGeoError] = useState<string | null>(null);
 
-    // Resolve hub label collisions & zoom >= 18 visibility so labels never overlap
-    const updateHubLabelCollisions = useCallback(() => {
-        const container = mapContainerRef.current;
-        const map = mapInstanceRef.current;
-        if (!container || !map) return;
-
-        const tooltips = Array.from(
-            container.querySelectorAll<HTMLElement>(
-                ".leaflet-tooltip.incat-hub-label",
-            ),
-        );
-
-        const zoom = map.getZoom();
-        if (zoom < 18) {
-            tooltips.forEach((el) => {
-                el.style.opacity = "0";
-                el.style.visibility = "hidden";
-            });
-            return;
-        }
-
-        const visibleRects: DOMRect[] = [];
-        tooltips.forEach((el) => {
-            el.style.opacity = "1";
-            el.style.visibility = "visible";
-
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return;
-
-            const isOverlapping = visibleRects.some(
-                (r) =>
-                    !(
-                        rect.right < r.left ||
-                        rect.left > r.right ||
-                        rect.bottom < r.top ||
-                        rect.top > r.bottom
-                    ),
+    // Group posts that share the same or very close coordinates (~12 meters)
+    const clusteredGroups = useMemo<ClusteredGroup[]>(() => {
+        const groups: ClusteredGroup[] = [];
+        for (const post of allPosts) {
+            const lat = Number(post.lat) || INCAT_CENTER.lat;
+            const lng = Number(post.lng) || INCAT_CENTER.lng;
+            const existing = groups.find(
+                (g) => haversineMeters(g.lat, g.lng, lat, lng) < 12,
             );
-
-            if (isOverlapping) {
-                el.style.opacity = "0";
-                el.style.visibility = "hidden";
+            if (existing) {
+                existing.posts.push(post);
             } else {
-                visibleRects.push(rect);
+                groups.push({
+                    key: `${lat.toFixed(5)}:${lng.toFixed(5)}:${post.id}`,
+                    lat,
+                    lng,
+                    posts: [post],
+                });
             }
-        });
-    }, []);
+        }
+        return groups;
+    }, [allPosts]);
 
-    // Synchronize both Leaflet viewport and MapLibre WebGL canvas dimensions
-    const syncMapSize = useCallback(() => {
+    // Initialize Leaflet Map centered on INCAT Campus
+    useEffect(() => {
+        ensureLeafletStylesheet();
+        if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+        const map = L.map(mapContainerRef.current, {
+            center: [INCAT_CENTER.lat, INCAT_CENTER.lng],
+            zoom: interactivePicker ? 18 : INCAT_CENTER.zoom,
+            minZoom: 15,
+            maxZoom: 20,
+            zoomControl: false,
+        });
+
+        L.control.zoom({ position: "bottomright" }).addTo(map);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution:
+                "&copy; OpenStreetMap contributors &middot; INCAT Laoag City",
+            maxZoom: 20,
+        }).addTo(map);
+
+        const hubsLayer = L.layerGroup().addTo(map);
+        const markersLayer = L.layerGroup().addTo(map);
+
+        hubsLayerRef.current = hubsLayer;
+        markersLayerRef.current = markersLayer;
+        mapInstanceRef.current = map;
+
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 150);
+
+        return () => {
+            map.remove();
+            mapInstanceRef.current = null;
+            markersLayerRef.current = null;
+            hubsLayerRef.current = null;
+            pickerMarkerRef.current = null;
+        };
+    }, [interactivePicker]);
+
+    // Handle interactive map click when used inside PostModal
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map || !interactivePicker) return;
+
+        const handleMapClick = (e: L.LeafletMouseEvent) => {
+            const { lat, lng } = e.latlng;
+            let nearestHub: CampusLocation | undefined;
+            let minDistance = Number.POSITIVE_INFINITY;
+
+            for (const hub of allHubs) {
+                const d = haversineMeters(lat, lng, hub.lat, hub.lng);
+                if (d < minDistance) {
+                    minDistance = d;
+                    nearestHub = hub;
+                }
+            }
+
+            onPickCoords?.({
+                lat: Number(lat.toFixed(6)),
+                lng: Number(lng.toFixed(6)),
+                nearestHubId: nearestHub?.id,
+                nearestHubName: nearestHub?.name,
+            });
+        };
+
+        map.on("click", handleMapClick);
+        return () => {
+            map.off("click", handleMapClick);
+        };
+    }, [interactivePicker, allHubs, onPickCoords]);
+
+    // Render picked coordinate pin in interactive picker mode
+    useEffect(() => {
         const map = mapInstanceRef.current;
         if (!map) return;
 
-        map.invalidateSize();
-        try {
-            const glMap = glLayerRef.current?.getMaplibreMap?.();
-            if (glMap) {
-                glMap.resize();
+        if (!interactivePicker || !pickedCoords) {
+            if (pickerMarkerRef.current) {
+                pickerMarkerRef.current.remove();
+                pickerMarkerRef.current = null;
             }
-        } catch (err) {
-            console.log("[CampusMap] MapLibre resize failed:", err);
-        }
-        updateHubLabelCollisions();
-    }, [updateHubLabelCollisions]);
-
-    // Initialize Leaflet map, OpenFreeMap Liberty/Dark vector layer, 3s OSM raster fallback, and Satellite layer
-    useEffect(() => {
-        if (!isOpen || !mapContainerRef.current || mapInstanceRef.current)
             return;
-
-        setUsingOsmFallback(false);
-
-        const map = L.map(mapContainerRef.current, {
-            center: INCAT_CENTER,
-            zoom: DEFAULT_ZOOM,
-            minZoom: MIN_ZOOM,
-            maxZoom: MAX_ZOOM,
-            maxBounds: INCAT_MAX_BOUNDS,
-            maxBoundsViscosity: 0.9,
-            zoomControl: true,
-            attributionControl: true,
-        });
-        mapInstanceRef.current = map;
-
-        map.attributionControl.setPrefix(false);
-        map.attributionControl.addAttribution(OPENFREEMAP_ATTRIBUTION);
-
-        map.on("error", (err) => {
-            console.log("[CampusMap] Leaflet map error:", err);
-        });
-
-        setCurrentZoom(map.getZoom());
-        map.on("zoomend", () => {
-            setCurrentZoom(map.getZoom());
-            updateHubLabelCollisions();
-        });
-        map.on("moveend", () => {
-            updateHubLabelCollisions();
-        });
-
-        // Dev-only coordinate helper: Shift+click logs "lat, lng" and copies to clipboard
-        if (import.meta.env.DEV) {
-            map.on("click", (e: L.LeafletMouseEvent) => {
-                if (!e.originalEvent.shiftKey) return;
-                const coords = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-                console.log(coords);
-                navigator.clipboard?.writeText(coords).catch((err) => {
-                    console.log("[CampusMap] Clipboard copy error:", err);
-                });
-            });
         }
 
-        let fallbackTriggered = false;
-        let hasRenderedFeatures = false;
-        let fallbackTimer: number | undefined;
+        const icon = L.divIcon({
+            className: "findr-picker-pin",
+            html: `
+        <div style="
+          display:flex;align-items:center;justify-content:center;
+          width:34px;height:34px;border-radius:9999px;
+          background:#10b981;color:#052e16;
+          border:3px solid #ffffff;
+          box-shadow:0 8px 20px rgba(16,185,129,0.55);
+          transform:translate(-50%,-50%);
+        ">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+        </div>
+      `,
+            iconSize: [0, 0],
+        });
 
-        const mountOsmRasterFallback = (reason: string) => {
-            if (fallbackTriggered || !mapInstanceRef.current) return;
-            fallbackTriggered = true;
-            if (fallbackTimer !== undefined) {
-                window.clearTimeout(fallbackTimer);
-            }
-
-            console.log(
-                `[CampusMap] Switching to OpenStreetMap raster fallback: ${reason}`,
-            );
-
-            if (glLayerRef.current) {
-                try {
-                    mapInstanceRef.current.removeLayer(glLayerRef.current);
-                } catch (err) {
-                    console.log(
-                        "[CampusMap] Error removing MapLibre layer:",
-                        err,
-                    );
-                }
-                glLayerRef.current = null;
-            }
-
-            const osmLayer = L.tileLayer(OSM_RASTER_TILES, {
-                minZoom: MIN_ZOOM,
-                maxZoom: MAX_ZOOM,
-                maxNativeZoom: 19,
-                attribution: OSM_ATTRIBUTION,
-                opacity: baseModeRef.current === "satellite" ? 0 : 1,
-            }).addTo(mapInstanceRef.current);
-
-            osmLayer.on("tileerror", (err) => {
-                console.log("[CampusMap] OSM raster tile error:", err);
-            });
-
-            osmFallbackLayerRef.current = osmLayer;
-            setUsingOsmFallback(true);
-
-            if (baseModeRef.current === "map") {
-                mapInstanceRef.current.attributionControl.removeAttribution(
-                    OPENFREEMAP_ATTRIBUTION,
-                );
-                mapInstanceRef.current.attributionControl.addAttribution(
-                    OSM_ATTRIBUTION,
-                );
-            }
-        };
-
-        const styleUrl = darkMode
-            ? OPENFREEMAP_DARK_STYLE
-            : OPENFREEMAP_LIBERTY_STYLE;
-
-        const leafletWithGL = L as unknown as {
-            maplibreGL?: (options: {
-                style: string;
-                minZoom?: number;
-                maxZoom?: number;
-                attributionControl?: boolean;
-            }) => MaplibreGLLayer;
-        };
-
-        if (
-            isWebGLSupported() &&
-            typeof leafletWithGL.maplibreGL === "function"
-        ) {
-            fallbackTimer = window.setTimeout(() => {
-                if (hasRenderedFeatures || fallbackTriggered) return;
-                try {
-                    const glMap = glLayerRef.current?.getMaplibreMap?.();
-                    const features = glMap?.queryRenderedFeatures?.() ?? [];
-                    if (features.length > 0) {
-                        hasRenderedFeatures = true;
-                        return;
-                    }
-                } catch (err) {
-                    console.log(
-                        "[CampusMap] queryRenderedFeatures threw at 3s check:",
-                        err,
-                    );
-                }
-                mountOsmRasterFallback(
-                    "MapLibre layer did not render features within 3 seconds",
-                );
-            }, FALLBACK_TIMEOUT_MS);
-
-            try {
-                const glLayer = leafletWithGL
-                    .maplibreGL({
-                        style: styleUrl,
-                        minZoom: MIN_ZOOM,
-                        maxZoom: MAX_ZOOM,
-                        attributionControl: false,
-                    })
-                    .addTo(map);
-                glLayerRef.current = glLayer;
-
-                const glMap = glLayer.getMaplibreMap?.();
-                if (!glMap) {
-                    throw new Error("getMaplibreMap() returned null/undefined");
-                }
-
-                if (typeof glMap.setMissingStyleImageResolver === "function") {
-                    glMap.setMissingStyleImageResolver((id) => {
-                        // Register a 1x1 transparent image for any missing sprite icon.
-                        const canvas = document.createElement("canvas");
-                        canvas.width = 1;
-                        canvas.height = 1;
-                        const context = canvas.getContext("2d");
-                        if (context) {
-                            context.clearRect(0, 0, 1, 1);
-                            glMap.addImage(
-                                id,
-                                context.getImageData(0, 0, 1, 1),
-                            );
-                        }
-                    });
-                }
-
-                const checkFeaturesRendered = () => {
-                    if (hasRenderedFeatures || fallbackTriggered) return;
-                    try {
-                        const features = glMap.queryRenderedFeatures();
-                        if (Array.isArray(features) && features.length > 0) {
-                            hasRenderedFeatures = true;
-                            if (fallbackTimer !== undefined) {
-                                window.clearTimeout(fallbackTimer);
-                            }
-                        }
-                    } catch {
-                        // Ignore transient query errors before style finishes loading
-                    }
-                };
-
-                glMap.on("style.load", () => {
-                    console.log("[CampusMap] MapLibre style loaded:", styleUrl);
-                    glMap.resize();
-                    checkFeaturesRendered();
-                });
-
-                glMap.on("load", () => {
-                    glMap.resize();
-                    checkFeaturesRendered();
-                });
-
-                glMap.on("idle", checkFeaturesRendered);
-                glMap.on("render", checkFeaturesRendered);
-
-                glMap.on("error", (err) => {
-                    console.log("[CampusMap] MapLibre error:", err);
-                    if (!hasRenderedFeatures) {
-                        mountOsmRasterFallback(
-                            "MapLibre emitted an error before rendering features",
-                        );
-                    }
-                });
-            } catch (err) {
-                console.log(
-                    "[CampusMap] MapLibre initialization threw an error:",
-                    err,
-                );
-                mountOsmRasterFallback("MapLibre initialization threw");
-            }
+        if (!pickerMarkerRef.current) {
+            pickerMarkerRef.current = L.marker(
+                [pickedCoords.lat, pickedCoords.lng],
+                {
+                    icon,
+                    zIndexOffset: 1000,
+                },
+            ).addTo(map);
         } else {
-            console.log(
-                "[CampusMap] WebGL or L.maplibreGL unavailable; falling back to OSM raster tiles.",
-            );
-            mountOsmRasterFallback("WebGL or maplibreGL plugin unavailable");
+            pickerMarkerRef.current.setLatLng([
+                pickedCoords.lat,
+                pickedCoords.lng,
+            ]);
         }
 
-        // Satellite raster layer kept ready at opacity 0 for instant 250ms crossfade
-        const satLayer = L.tileLayer(ESRI_WORLD_IMAGERY_TILES, {
-            minZoom: MIN_ZOOM,
-            maxZoom: MAX_ZOOM,
-            maxNativeZoom: 19,
-            opacity: baseModeRef.current === "satellite" ? 1 : 0,
-            className: "incat-satellite-layer",
-        }).addTo(map);
-        satelliteLayerRef.current = satLayer;
+        map.panTo([pickedCoords.lat, pickedCoords.lng], { animate: true });
+    }, [interactivePicker, pickedCoords]);
 
-        // Layer group for hub, lost, and found pins
-        markersLayerRef.current = L.layerGroup().addTo(map);
-
-        // Sync size immediately after container is shown, on container resize, and on window resize
-        const rafId = window.requestAnimationFrame(() => syncMapSize());
-        const showTimerId = window.setTimeout(() => syncMapSize(), 100);
-
-        const resizeObserver = new ResizeObserver(() => {
-            syncMapSize();
-        });
-        resizeObserver.observe(mapContainerRef.current);
-
-        window.addEventListener("resize", syncMapSize);
-
-        return () => {
-            if (fallbackTimer !== undefined) {
-                window.clearTimeout(fallbackTimer);
-            }
-            window.cancelAnimationFrame(rafId);
-            window.clearTimeout(showTimerId);
-            window.removeEventListener("resize", syncMapSize);
-            resizeObserver.disconnect();
-            map.remove();
-            mapInstanceRef.current = null;
-            glLayerRef.current = null;
-            osmFallbackLayerRef.current = null;
-            satelliteLayerRef.current = null;
-            markersLayerRef.current = null;
-        };
-    }, [isOpen, syncMapSize, updateHubLabelCollisions]);
-
-    // Switch between OpenFreeMap Liberty (light) and Dark (dark) in place via setStyle()
+    // Render INCAT campus building hubs
     useEffect(() => {
-        if (usingOsmFallback) return;
-        const glMap = glLayerRef.current?.getMaplibreMap?.();
-        if (!glMap) return;
+        const hubsLayer = hubsLayerRef.current;
+        if (!hubsLayer) return;
+        hubsLayer.clearLayers();
 
-        const targetStyle = darkMode
-            ? OPENFREEMAP_DARK_STYLE
-            : OPENFREEMAP_LIBERTY_STYLE;
+        if (!showHubLabels) return;
 
-        if (activeStyleRef.current === targetStyle) return;
-        activeStyleRef.current = targetStyle;
-
-        try {
-            glMap.setStyle(targetStyle);
-        } catch (err) {
-            console.log(
-                "[CampusMap] Failed switching style with setStyle:",
-                err,
-            );
-        }
-    }, [darkMode, usingOsmFallback]);
-
-    // Crossfade Map <-> Satellite over 250ms and update attribution
-    useEffect(() => {
-        const map = mapInstanceRef.current;
-        const satLayer = satelliteLayerRef.current;
-        const osmLayer = osmFallbackLayerRef.current;
-        const glContainer = glLayerRef.current
-            ?.getMaplibreMap?.()
-            ?.getContainer?.();
-
-        if (!map || !satLayer) return;
-
-        if (baseMode === "satellite") {
-            satLayer.setOpacity(1);
-            if (osmLayer) osmLayer.setOpacity(0);
-            if (glContainer) {
-                glContainer.style.transition = "opacity 250ms ease";
-                glContainer.style.opacity = "0";
-            }
-            map.attributionControl.removeAttribution(OPENFREEMAP_ATTRIBUTION);
-            map.attributionControl.removeAttribution(OSM_ATTRIBUTION);
-            map.attributionControl.addAttribution(ESRI_SATELLITE_ATTRIBUTION);
-        } else {
-            satLayer.setOpacity(0);
-            if (osmLayer) osmLayer.setOpacity(1);
-            if (glContainer) {
-                glContainer.style.transition = "opacity 250ms ease";
-                glContainer.style.opacity = "1";
-            }
-            map.attributionControl.removeAttribution(
-                ESRI_SATELLITE_ATTRIBUTION,
-            );
-            map.attributionControl.addAttribution(
-                usingOsmFallback ? OSM_ATTRIBUTION : OPENFREEMAP_ATTRIBUTION,
-            );
-            syncMapSize();
-        }
-    }, [baseMode, usingOsmFallback, syncMapSize]);
-
-    // Render 10px Ringed Hub & Item Pins + Permanent Zoom 18+ Hub Tooltip Labels
-    useEffect(() => {
-        const layerGroup = markersLayerRef.current;
-        if (!layerGroup || !isOpen) return;
-
-        layerGroup.clearLayers();
-
-        // 1. Campus Drop-off Hub Dots (INCAT Green #234B38) with permanent 11px tooltip at zoom 18+
-        CAMPUS_HUBS.forEach((hub, idx) => {
-            const isSelected = selectedHubId === hub.id;
-            const delayMs = prefersReducedMotion ? 0 : Math.min(idx * 25, 180);
-
-            const hubIcon = L.divIcon({
-                className: "incat-pin-wrapper",
-                html: `<div class="incat-pin-drop" style="animation-delay: ${delayMs}ms;">
-          <div class="incat-pin-dot ${
-              isSelected ? "incat-pin-active" : ""
-          }" style="background-color: #234B38;"></div>
-        </div>`,
-                iconSize: [14, 14],
-                iconAnchor: [7, 7],
-            });
+        for (const hub of allHubs) {
+            const badgeHtml = `
+        <div style="
+          display:inline-flex;align-items:center;gap:4px;
+          padding:2px 7px;border-radius:9999px;
+          background:${hub.isDropOffHub ? "rgba(6,78,59,0.92)" : "rgba(23,23,23,0.88)"};
+          color:${hub.isDropOffHub ? "#a7f3d0" : "#d4d4d8"};
+          border:1px solid ${hub.isDropOffHub ? "rgba(52,211,153,0.45)" : "rgba(82,82,91,0.5)"};
+          font-size:10px;font-weight:600;white-space:nowrap;
+          box-shadow:0 2px 8px rgba(0,0,0,0.35);
+          transform:translate(-50%, -50%);
+          cursor:pointer;
+        ">
+          <span style="width:6px;height:6px;border-radius:9999px;background:${
+              hub.isDropOffHub ? "#34d399" : "#a1a1aa"
+          };"></span>
+          <span>${hub.buildingCode}</span>
+        </div>
+      `;
 
             const marker = L.marker([hub.lat, hub.lng], {
-                icon: hubIcon,
-                zIndexOffset: 150,
+                icon: L.divIcon({
+                    className: "findr-hub-badge",
+                    html: badgeHtml,
+                    iconSize: [0, 0],
+                }),
             });
 
-            marker.bindTooltip(`${hub.name}`, {
-                permanent: true,
-                direction: "right",
-                offset: [8, 0],
-                className: "incat-hub-label",
+            marker.bindTooltip(
+                `<strong>${hub.name}</strong><br/><span>${
+                    hub.isDropOffHub
+                        ? "Official Drop-off Hub"
+                        : "Campus Landmark"
+                }</span>`,
+                { direction: "top", offset: [0, -10] },
+            );
+
+            if (interactivePicker) {
+                marker.on("click", () => {
+                    onPickCoords?.({
+                        lat: hub.lat,
+                        lng: hub.lng,
+                        nearestHubId: hub.id,
+                        nearestHubName: hub.name,
+                    });
+                });
+            }
+
+            marker.addTo(hubsLayer);
+        }
+    }, [allHubs, showHubLabels, interactivePicker, onPickCoords]);
+
+    // Render Lost / Found / Returned item markers with clustering
+    useEffect(() => {
+        const markersLayer = markersLayerRef.current;
+        if (!markersLayer) return;
+        markersLayer.clearLayers();
+
+        if (interactivePicker) return;
+
+        for (const cluster of clusteredGroups) {
+            const primary = cluster.posts[0];
+            const count = cluster.posts.length;
+            const isSelected = cluster.posts.some(
+                (p) => p.id === selectedPostId,
+            );
+
+            const hasLost = cluster.posts.some(
+                (p) => p.type === "lost" && p.status !== "returned",
+            );
+            const hasFound = cluster.posts.some(
+                (p) => p.type === "found" && p.status !== "returned",
+            );
+
+            let bg = "#52525b"; // returned / slate
+            let ring = "rgba(161,161,170,0.35)";
+            if (hasLost) {
+                bg = "#e11d48"; // rose-600
+                ring = "rgba(225,29,72,0.4)";
+            } else if (hasFound) {
+                bg = "#059669"; // emerald-600
+                ring = "rgba(5,150,105,0.4)";
+            }
+
+            const pinHtml = `
+        <div style="
+          position:relative;
+          display:flex;align-items:center;justify-content:center;
+          width:${count > 1 ? "36px" : "30px"};
+          height:${count > 1 ? "36px" : "30px"};
+          border-radius:9999px;
+          background:${bg};
+          color:#ffffff;
+          font-weight:700;font-size:12px;
+          border:2.5px solid #ffffff;
+          box-shadow:0 0 0 ${isSelected ? "7px" : "4px"} ${ring}, 0 6px 16px rgba(0,0,0,0.45);
+          transform:translate(-50%, -50%) scale(${isSelected ? "1.15" : "1"});
+          transition:transform 0.2s ease;
+          cursor:pointer;
+        ">
+          ${
+              count > 1
+                  ? `<span>${count}</span>`
+                  : `<span style="width:8px;height:8px;border-radius:9999px;background:#fff;"></span>`
+          }
+        </div>
+      `;
+
+            const marker = L.marker([cluster.lat, cluster.lng], {
+                icon: L.divIcon({
+                    className: "findr-post-pin",
+                    html: pinHtml,
+                    iconSize: [0, 0],
+                }),
+                zIndexOffset: isSelected ? 900 : 500,
             });
 
             marker.on("click", () => {
-                setPopoverPost(null);
-                onSelectHub(selectedHubId === hub.id ? "ALL" : hub.id);
-            });
-            marker.addTo(layerGroup);
-        });
-
-        // 2. Active Lost/Found Item Dots placed slightly offset from the hub pin
-        posts
-            .filter((p) => p.status === "OPEN")
-            .forEach((post, idx) => {
-                const hub = getHubById(post.hubId);
-                const angle = (idx * 1.45) % (Math.PI * 2);
-                const latOffset = Math.cos(angle) * 0.000055;
-                const lngOffset = Math.sin(angle) * 0.000055;
-
-                const isSelected =
-                    activePinPostId === post.id || popoverPost?.id === post.id;
-                const dotColor = post.type === "LOST" ? "#B91C1C" : "#D97706";
-                const delayMs = prefersReducedMotion
-                    ? 0
-                    : Math.min((idx + 4) * 35, 260);
-
-                const postIcon = L.divIcon({
-                    className: "incat-pin-wrapper",
-                    html: `<div class="incat-pin-drop" style="animation-delay: ${delayMs}ms;">
-            <div class="incat-pin-dot ${
-                isSelected ? "incat-pin-active" : ""
-            }" style="background-color: ${dotColor};"></div>
-          </div>`,
-                    iconSize: [14, 14],
-                    iconAnchor: [7, 7],
+                setActiveCluster(cluster);
+                setActivePostIndex(0);
+                mapInstanceRef.current?.panTo([cluster.lat, cluster.lng], {
+                    animate: true,
                 });
-
-                const marker = L.marker(
-                    [hub.lat + latOffset, hub.lng + lngOffset],
-                    {
-                        icon: postIcon,
-                        zIndexOffset: isSelected ? 400 : 250,
-                    },
-                );
-
-                marker.on("click", () => {
-                    setPopoverPost(post);
-                    onHighlightPost(post);
-                });
-
-                marker.addTo(layerGroup);
             });
 
-        window.requestAnimationFrame(() => {
-            updateHubLabelCollisions();
-        });
-    }, [
-        isOpen,
-        posts,
-        selectedHubId,
-        activePinPostId,
-        popoverPost,
-        prefersReducedMotion,
-        currentZoom,
-        onSelectHub,
-        onHighlightPost,
-        updateHubLabelCollisions,
-    ]);
+            marker.bindTooltip(
+                count > 1
+                    ? `${count} items at ${primary.locationName}`
+                    : `${primary.type.toUpperCase()}: ${primary.title}`,
+                { direction: "top", offset: [0, -14] },
+            );
 
-    const handleRecenter = () => {
-        if (!mapInstanceRef.current) return;
-        mapInstanceRef.current.flyTo(INCAT_CENTER, DEFAULT_ZOOM, {
-            duration: prefersReducedMotion ? 0 : 0.8,
-        });
+            marker.addTo(markersLayer);
+        }
+    }, [clusteredGroups, selectedPostId, interactivePicker]);
+
+    const handleResetIncatCenter = () => {
+        setGeoError(null);
+        mapInstanceRef.current?.flyTo(
+            [INCAT_CENTER.lat, INCAT_CENTER.lng],
+            interactivePicker ? 18 : INCAT_CENTER.zoom,
+            { duration: 0.7 },
+        );
     };
 
-    const shouldFilterRasterPane =
-        usingOsmFallback && darkMode && baseMode === "map";
+    const handleLocateMe = () => {
+        setGeoError(null);
+        if (!("geolocation" in navigator)) {
+            setGeoError("Geolocation is not supported by your browser.");
+            return;
+        }
+        setLocatingUser(true);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setLocatingUser(false);
+                const { latitude, longitude } = pos.coords;
+                const map = mapInstanceRef.current;
+                if (!map) return;
+
+                if (userLocationMarkerRef.current) {
+                    userLocationMarkerRef.current.remove();
+                }
+                userLocationMarkerRef.current = L.circleMarker(
+                    [latitude, longitude],
+                    {
+                        radius: 8,
+                        color: "#ffffff",
+                        weight: 2.5,
+                        fillColor: "#3b82f6",
+                        fillOpacity: 1,
+                    },
+                )
+                    .bindTooltip("Your current location", { direction: "top" })
+                    .addTo(map);
+
+                map.flyTo([latitude, longitude], 18, { duration: 0.8 });
+
+                if (interactivePicker && onPickCoords) {
+                    onPickCoords({
+                        lat: Number(latitude.toFixed(6)),
+                        lng: Number(longitude.toFixed(6)),
+                    });
+                }
+            },
+            () => {
+                setLocatingUser(false);
+                setGeoError(
+                    "Could not access GPS location. Check browser permissions.",
+                );
+            },
+            { enableHighAccuracy: true, timeout: 8000 },
+        );
+    };
+
+    const activePost =
+        activeCluster && activeCluster.posts[activePostIndex]
+            ? activeCluster.posts[activePostIndex]
+            : null;
 
     return (
-        <AnimatePresence initial={false}>
-            {isOpen && (
-                <motion.div
-                    key="incat-campus-map-shell"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{
-                        duration: prefersReducedMotion ? 0.15 : 0.3,
-                        ease: [0.22, 1, 0.36, 1],
-                    }}
-                    onAnimationComplete={() => {
-                        syncMapSize();
-                    }}
-                    className="overflow-hidden mb-6"
-                >
-                    <div className="border border-border rounded-lg overflow-hidden bg-surface relative">
-                        {/* Map Viewport: 300px on mobile, 420px on desktop */}
-                        <div
-                            ref={mapContainerRef}
-                            className={`h-75 sm:h-105 w-full z-0 ${
-                                shouldFilterRasterPane
-                                    ? "incat-osm-dark-raster"
-                                    : ""
+        <div
+            className={`relative overflow-hidden rounded-2xl border border-neutral-800/90 bg-neutral-950 shadow-xl ${className}`}
+        >
+            {/* Top Floating Bar */}
+            <div className="pointer-events-none absolute top-3 right-3 left-3 z-400 flex flex-wrap items-center justify-between gap-2">
+                <div className="pointer-events-auto inline-flex items-center gap-2 rounded-xl border border-neutral-800/90 bg-neutral-950/90 px-3 py-1.5 text-xs text-neutral-200 backdrop-blur-md">
+                    <Compass className="h-3.5 w-3.5 text-emerald-400" />
+                    <span className="font-semibold">INCAT Campus Map</span>
+                    <span className="hidden text-neutral-400 sm:inline">
+                        &middot; P. Gomez St., Laoag City
+                    </span>
+                </div>
+
+                <div className="pointer-events-auto flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => setShowHubLabels((prev) => !prev)}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium backdrop-blur-md transition-colors ${
+                            showHubLabels
+                                ? "border-emerald-700/60 bg-emerald-950/85 text-emerald-200"
+                                : "border-neutral-800 bg-neutral-950/85 text-neutral-300 hover:bg-neutral-900"
+                        }`}
+                        title="Toggle INCAT building hub labels"
+                    >
+                        <Layers className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Hubs</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleLocateMe}
+                        disabled={locatingUser}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-950/90 px-2.5 py-1.5 text-xs font-medium text-neutral-200 backdrop-blur-md transition-colors hover:border-neutral-700 hover:bg-neutral-900 disabled:opacity-50"
+                        title="Center on my GPS location"
+                    >
+                        <LocateFixed
+                            className={`h-3.5 w-3.5 text-emerald-400 ${
+                                locatingUser ? "animate-spin" : ""
                             }`}
                         />
+                        <span>
+                            {locatingUser ? "Locating..." : "Locate me"}
+                        </span>
+                    </button>
 
-                        {/* Top-Right Controls: Map / Satellite Segmented Control + Recenter Button */}
-                        <div className="absolute top-3 right-3 z-400 flex items-center gap-2">
-                            <div
-                                role="group"
-                                aria-label="Map view mode"
-                                className="inline-flex p-0.5 bg-surface border border-border rounded-md"
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => setBaseMode("map")}
-                                    className={`px-2.5 py-1 text-xs font-medium rounded transition-colors duration-150 ${
-                                        baseMode === "map"
-                                            ? "bg-subtle text-text"
-                                            : "text-muted hover:text-text"
-                                    }`}
-                                >
-                                    Map
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setBaseMode("satellite")}
-                                    className={`px-2.5 py-1 text-xs font-medium rounded transition-colors duration-150 ${
-                                        baseMode === "satellite"
-                                            ? "bg-subtle text-text"
-                                            : "text-muted hover:text-text"
-                                    }`}
-                                >
-                                    Satellite
-                                </button>
-                            </div>
+                    <button
+                        type="button"
+                        onClick={handleResetIncatCenter}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-950/90 px-2.5 py-1.5 text-xs font-medium text-neutral-200 backdrop-blur-md transition-colors hover:border-neutral-700 hover:bg-neutral-900"
+                        title="Reset view to INCAT Campus"
+                    >
+                        <Navigation className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>INCAT Center</span>
+                    </button>
+                </div>
+            </div>
 
-                            <button
-                                type="button"
-                                onClick={handleRecenter}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-surface text-text border border-border rounded-md hover:border-muted transition-colors duration-150"
+            {/* Map Canvas */}
+            <div
+                ref={mapContainerRef}
+                className={`w-full ${heightClassName} bg-neutral-900`}
+                aria-label="INCAT Campus interactive map"
+            />
+
+            {/* Legend / Interactive Picker Helper */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-800/80 bg-neutral-950 px-3.5 py-2 text-xs text-neutral-400">
+                {interactivePicker ? (
+                    <div className="flex items-center gap-2 text-emerald-300">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                            Tap anywhere on the INCAT map or click a building
+                            badge to pin the exact spot.
+                        </span>
+                    </div>
+                ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-full bg-rose-600" />
+                            Lost (
+                            {
+                                allPosts.filter(
+                                    (p) =>
+                                        p.type === "lost" &&
+                                        p.status !== "returned",
+                                ).length
+                            }
+                            )
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                            Found (
+                            {
+                                allPosts.filter(
+                                    (p) =>
+                                        p.type === "found" &&
+                                        p.status !== "returned",
+                                ).length
+                            }
+                            )
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-full bg-neutral-500" />
+                            Returned (
+                            {
+                                allPosts.filter((p) => p.status === "returned")
+                                    .length
+                            }
+                            )
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Drop-off Hubs
+                        </span>
+                    </div>
+                )}
+
+                {geoError && <span className="text-rose-400">{geoError}</span>}
+            </div>
+
+            {/* Slide-Up Detail Card on Pin Click */}
+            {!interactivePicker && activePost && activeCluster && (
+                <div className="absolute right-3 bottom-12 left-3 z-450 max-w-md rounded-2xl border border-neutral-700/90 bg-neutral-950/95 p-3.5 shadow-2xl backdrop-blur-md sm:left-4">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                                className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+                                    activePost.status === "returned"
+                                        ? "bg-neutral-800 text-neutral-300"
+                                        : activePost.type === "lost"
+                                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                          : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                }`}
                             >
-                                <Crosshair size={14} strokeWidth={1.5} />
-                                Recenter on campus
-                            </button>
+                                {activePost.status === "returned"
+                                    ? "Returned"
+                                    : activePost.type.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-neutral-400">
+                                {formatRelativeTime(activePost.createdAt)}
+                            </span>
+                            {activeCluster.posts.length > 1 && (
+                                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300">
+                                    Item {activePostIndex + 1} of{" "}
+                                    {activeCluster.posts.length} here
+                                </span>
+                            )}
                         </div>
 
-                        {/* Active Hub Filter Pill */}
-                        {selectedHubId !== "ALL" && (
-                            <div className="absolute bottom-12 left-3 z-400 inline-flex items-center gap-2 px-3 py-1.5 bg-surface border border-border rounded-md text-xs text-text">
-                                <span>
-                                    Building: {getHubById(selectedHubId).name}
-                                </span>
+                        <button
+                            type="button"
+                            onClick={() => setActiveCluster(null)}
+                            aria-label="Close pin preview"
+                            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <h4 className="mt-1.5 font-semibold text-neutral-100">
+                        {activePost.title}
+                    </h4>
+                    <p className="mt-1 line-clamp-2 text-xs text-neutral-400">
+                        {activePost.description}
+                    </p>
+
+                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-neutral-800/80 pt-2.5 text-xs">
+                        <span className="inline-flex items-center gap-1 text-neutral-300">
+                            <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+                            {activePost.locationName}
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                            {activeCluster.posts.length > 1 && (
                                 <button
                                     type="button"
-                                    onClick={() => onSelectHub("ALL")}
-                                    className="text-muted hover:text-text"
-                                    aria-label="Clear building filter"
-                                >
-                                    <X size={13} strokeWidth={1.5} />
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Pin Popover Card */}
-                        <AnimatePresence>
-                            {popoverPost && (
-                                <motion.div
-                                    key={popoverPost.id}
-                                    initial={
-                                        prefersReducedMotion
-                                            ? { opacity: 0 }
-                                            : { opacity: 0, y: 6, scale: 0.97 }
+                                    onClick={() =>
+                                        setActivePostIndex(
+                                            (prev) =>
+                                                (prev + 1) %
+                                                activeCluster.posts.length,
+                                        )
                                     }
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 4, scale: 0.97 }}
-                                    transition={{
-                                        duration: 0.18,
-                                        ease: [0.22, 1, 0.36, 1],
-                                    }}
-                                    className="absolute bottom-12 left-3 right-3 sm:left-auto sm:right-3 sm:w-72 z-400 bg-surface border border-border rounded-md p-3.5 shadow-popover"
+                                    className="rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
                                 >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-1.5 text-xs text-muted">
-                                                <span
-                                                    className={`w-1.5 h-1.5 rounded-full ${
-                                                        popoverPost.type ===
-                                                        "LOST"
-                                                            ? "bg-lost"
-                                                            : "bg-found"
-                                                    }`}
-                                                />
-                                                <span>
-                                                    {popoverPost.type === "LOST"
-                                                        ? "Lost"
-                                                        : "Found"}
-                                                </span>
-                                                <span>·</span>
-                                                <span>
-                                                    {popoverPost.createdAt}
-                                                </span>
-                                            </div>
-                                            <h3 className="text-sm font-medium text-text truncate mt-0.5">
-                                                {popoverPost.title}
-                                            </h3>
-                                            <p className="text-xs text-muted truncate mt-0.5">
-                                                {
-                                                    getHubById(
-                                                        popoverPost.hubId,
-                                                    ).name
-                                                }
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setPopoverPost(null)}
-                                            aria-label="Close pin popover"
-                                            className="p-1 text-muted hover:text-text rounded"
-                                        >
-                                            <X size={14} strokeWidth={1.5} />
-                                        </button>
-                                    </div>
-
-                                    <div className="mt-2.5 pt-2 border-t border-border flex items-center justify-between text-xs">
-                                        <span className="text-muted truncate">
-                                            {popoverPost.posterName}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                onOpenPostDetail(popoverPost)
-                                            }
-                                            className="inline-flex items-center gap-1 font-medium text-accent hover:opacity-80 shrink-0"
-                                        >
-                                            View
-                                            <ArrowUpRight
-                                                size={13}
-                                                strokeWidth={1.5}
-                                            />
-                                        </button>
-                                    </div>
-                                </motion.div>
+                                    Next item
+                                </button>
                             )}
-                        </AnimatePresence>
 
-                        {/* Legend Footer */}
-                        <div className="px-4 py-2.5 border-t border-border flex flex-wrap items-center justify-between gap-4 text-xs text-muted bg-surface">
-                            <div className="flex items-center gap-5">
-                                <span className="inline-flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-lost border border-white inline-block" />
-                                    Lost
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-found border border-white inline-block" />
-                                    Found
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-accent border border-white inline-block" />
-                                    INCAT drop-off hub
-                                </span>
-                            </div>
-                            <span>INCAT Campus · P. Gomez Street</span>
+                            {(onSelectPost || onSelectItem) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        onSelectPost?.(activePost);
+                                        onSelectItem?.(activePost);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+                                >
+                                    <span>Details</span>
+                                    <ExternalLink className="h-3 w-3" />
+                                </button>
+                            )}
                         </div>
                     </div>
-                </motion.div>
+                </div>
             )}
-        </AnimatePresence>
+        </div>
     );
 };
+
+export default CampusMap;
