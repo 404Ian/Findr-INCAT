@@ -10,9 +10,13 @@ database_id = "f2ce4053-b951-4800-b991-fd9f8d38bc72"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
-binding = "findr_incat_media"
+binding = "R2"
 bucket_name = "findr-incat-media"
 
 [vars]
 PUBLIC_APP_NAME = "Findr INCAT"
 PUBLIC_ORIGIN = "https://myfindr.pages.dev"
+TURNSTILE_SECRET_KEY = "0x4AAAAAAF2kiAn1KIXM27XlKFH2BMnzays"
+VITE_TURNSTILE_SITE_KEY = "0x4AAAAAAF2kiIgXAVwKFGzo"
+ADMIN_PASSWORD = "findr_admin123"
+CAMPUS_CODE = "INCATSIKAT2026"
