@@ -1,4 +1,6 @@
 import React from "react";
+import { motion } from "motion/react";
+import { SPRING_SNAPPY } from "../lib/motion";
 import {
     CAMPUS_HUB_NAMES,
     type CampusHubName,
@@ -133,32 +135,42 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
     );
 
     return (
-        <div className="space-y-4 rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-4 text-sm">
-            {/* Relay Mode Banner */}
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-emerald-900/50 bg-emerald-950/20 p-3.5">
+        <div className="theme-surface space-y-4 rounded-2xl border border-border bg-subtle/40 p-4 text-sm">
+            {/* Relay Mode Banner with Animated Switch */}
+            <div className="flex items-start justify-between gap-4 rounded-xl border border-accent/25 bg-accent-soft p-3.5">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                        <span className="font-medium text-neutral-100">
+                        <span className="inline-block h-2 w-2 rounded-full bg-accent" />
+                        <span className="font-semibold text-text">
                             Anonymous Relay Messaging (Recommended)
                         </span>
                     </div>
-                    <p className="text-xs leading-relaxed text-neutral-400">
+                    <p className="text-xs leading-relaxed text-text-secondary">
                         Finders can message you directly inside Findr without
                         seeing your phone number or social profile. You read
                         messages in <strong>My items</strong>.
                     </p>
                 </div>
-                <label className="relative inline-flex cursor-pointer items-center">
-                    <input
-                        type="checkbox"
-                        className="peer sr-only"
-                        checked={value.relayMode}
-                        onChange={(e) => handleRelayToggle(e.target.checked)}
-                        aria-label="Enable anonymous relay messaging"
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={value.relayMode}
+                    aria-label="Enable anonymous relay messaging"
+                    onClick={() => handleRelayToggle(!value.relayMode)}
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                        value.relayMode
+                            ? "border-accent bg-accent"
+                            : "border-border-strong bg-subtle"
+                    }`}
+                >
+                    <motion.span
+                        layout
+                        transition={SPRING_SNAPPY}
+                        className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm ${
+                            value.relayMode ? "translate-x-6" : "translate-x-1"
+                        }`}
                     />
-                    <div className="h-6 w-11 rounded-full bg-neutral-700 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-emerald-600 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-400" />
-                </label>
+                </button>
             </div>
 
             {/* Preferred Campus Drop-off Hub */}
@@ -166,7 +178,7 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                 <div className="space-y-1.5">
                     <label
                         htmlFor="contact-dropoff-hub"
-                        className="block text-xs font-medium tracking-wide text-neutral-300 uppercase"
+                        className="block text-xs font-semibold tracking-wide text-text uppercase"
                     >
                         Suggested INCAT Drop-off Hub
                     </label>
@@ -178,7 +190,7 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                                 e.target.value as CampusHubName | "",
                             )
                         }
-                        className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                        className="min-h-11 w-full rounded-xl border border-border bg-surface px-3.5 py-2 text-sm text-text focus:border-accent focus:outline-none"
                     >
                         <option value="">No specific hub preference</option>
                         {CAMPUS_HUB_NAMES.map((hubName) => (
@@ -187,7 +199,7 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                             </option>
                         ))}
                     </select>
-                    <p className="text-xs text-neutral-400">
+                    <p className="text-xs text-muted">
                         Shown to the finder so they can leave your item safely
                         on campus.
                     </p>
@@ -196,11 +208,11 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
 
             {/* Direct Contact Channels */}
             <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium tracking-wide text-neutral-300 uppercase">
+                <div className="flex flex-wrap items-center justify-between gap-1">
+                    <span className="text-xs font-semibold tracking-wide text-text uppercase">
                         Direct Contact Channels (Per-Channel Visibility)
                     </span>
-                    <span className="text-xs text-neutral-400">
+                    <span className="text-[11px] text-muted">
                         Protected by Turnstile anti-scrape check
                     </span>
                 </div>
@@ -220,14 +232,14 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                         return (
                             <div
                                 key={meta.kind}
-                                className={`rounded-lg border p-3 transition-colors ${
+                                className={`rounded-xl border p-3 transition-colors ${
                                     isEnabled
-                                        ? "border-neutral-700 bg-neutral-950/90"
-                                        : "border-neutral-800/70 bg-neutral-950/40"
+                                        ? "border-border-strong bg-surface shadow-sm"
+                                        : "border-border bg-surface/50"
                                 }`}
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <label className="flex cursor-pointer items-center gap-2 font-medium text-neutral-200">
+                                    <label className="flex cursor-pointer items-center gap-2 font-semibold text-text">
                                         <input
                                             type="checkbox"
                                             checked={isEnabled}
@@ -241,9 +253,11 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                                                     removeMethod(meta.kind);
                                                 }
                                             }}
-                                            className="h-4 w-4 rounded border-neutral-600 text-emerald-600 focus:ring-emerald-500"
+                                            className="h-4 w-4 rounded border-border-strong accent-accent"
                                         />
-                                        <span>{meta.label}</span>
+                                        <span className="text-xs sm:text-sm">
+                                            {meta.label}
+                                        </span>
                                     </label>
 
                                     {isEnabled && (
@@ -254,10 +268,10 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                                                     visible: !isVisible,
                                                 })
                                             }
-                                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                                            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
                                                 isVisible
-                                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                                    : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+                                                    ? "border-accent/40 bg-accent-soft text-accent"
+                                                    : "border-border bg-subtle text-muted"
                                             }`}
                                             title={
                                                 isVisible
@@ -284,9 +298,9 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                                             }
                                             placeholder={meta.placeholder}
                                             aria-label={`${meta.label} contact value`}
-                                            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-500 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                                            className="min-h-10 w-full rounded-lg border border-border bg-subtle/50 px-3 py-1.5 text-xs text-text placeholder:text-muted focus:border-accent focus:bg-surface focus:outline-none"
                                         />
-                                        <p className="text-[11px] text-neutral-500">
+                                        <p className="text-[11px] text-muted">
                                             {meta.helper}
                                         </p>
                                     </div>
@@ -298,27 +312,33 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
             </div>
 
             {/* Live Public Disclosure Summary */}
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-300">
-                <div className="font-semibold text-neutral-200">
+            <div className="rounded-xl border border-border bg-surface p-3.5 text-xs text-text-secondary">
+                <div className="font-semibold text-text">
                     What finders will see publicly:
                 </div>
-                <ul className="mt-1.5 list-inside list-disc space-y-1 text-neutral-400">
+                <ul className="mt-1.5 list-inside list-disc space-y-1 text-muted">
                     {value.relayMode && (
                         <li>
-                            An in-app <strong>Message the owner</strong> relay
-                            form (your real contact stays private).
+                            An in-app{" "}
+                            <strong className="text-text">
+                                Message the owner
+                            </strong>{" "}
+                            relay form (your real contact stays private).
                         </li>
                     )}
                     {value.dropOffHub && (
                         <li>
                             Suggested drop-off at{" "}
-                            <strong>{value.dropOffHub}</strong>.
+                            <strong className="text-text">
+                                {value.dropOffHub}
+                            </strong>
+                            .
                         </li>
                     )}
                     {publicMethods.length > 0 ? (
                         <li>
                             Direct buttons for{" "}
-                            <strong>
+                            <strong className="text-text">
                                 {publicMethods
                                     .map((m) => m.kind.toUpperCase())
                                     .join(", ")}
