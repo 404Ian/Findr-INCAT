@@ -4,10 +4,10 @@ import {
     CheckCircle2,
     ShieldQuestion,
     Unlock,
-    X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { ContactMethod, Post } from "../types";
+import { Button, Input, Modal } from "./ui/primitives";
 
 export interface ClaimVerifyDrawerProps {
     post: Post;
@@ -27,8 +27,6 @@ export const ClaimVerifyDrawer: React.FC<ClaimVerifyDrawerProps> = ({
         ContactMethod[] | null
     >(null);
     const [dropOffHub, setDropOffHub] = useState<string | undefined>(undefined);
-
-    if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -54,160 +52,129 @@ export const ClaimVerifyDrawer: React.FC<ClaimVerifyDrawerProps> = ({
     };
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Claim Verification"
+            description="Answer the finder’s security question to unlock direct contact info."
+            maxWidthClass="max-w-md"
         >
-            <div className="w-full max-w-md overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-neutral-100 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                    <div className="flex items-center gap-2">
-                        <ShieldQuestion className="h-5 w-5 text-emerald-400" />
-                        <h3 className="text-base font-bold">
-                            Claim Verification
-                        </h3>
+            <div className="space-y-4 text-xs">
+                <div className="rounded-xl border border-border bg-subtle/60 p-3.5">
+                    <span className="text-[11px] font-semibold tracking-wider text-muted uppercase">
+                        Item Notice
+                    </span>
+                    <div className="font-display mt-0.5 text-sm font-bold text-text">
+                        {post.title}
                     </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-800"
-                    >
-                        <X className="h-5 w-5" />
-                    </button>
+                    <div className="mt-1 text-muted">
+                        Spotted / Turned in at:{" "}
+                        <strong className="text-text-secondary">
+                            {post.locationName}
+                        </strong>
+                    </div>
                 </div>
 
-                <div className="mt-4 space-y-4 text-xs">
-                    <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-3.5">
-                        <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">
-                            Item
-                        </span>
-                        <div className="font-semibold text-neutral-100">
-                            {post.title}
+                {verifiedMethods ? (
+                    <div className="space-y-4">
+                        <div className="rounded-2xl border border-accent/35 bg-accent-soft p-4 text-center">
+                            <CheckCircle2 className="mx-auto h-8 w-8 text-accent" />
+                            <h4 className="font-display mt-2 text-base font-bold text-text">
+                                Verification Successful!
+                            </h4>
+                            <p className="mt-1 text-text-secondary">
+                                You answered the poster&apos;s security
+                                question.
+                            </p>
                         </div>
-                        <div className="mt-1 text-neutral-400">
-                            Posted at:{" "}
-                            <strong className="text-neutral-200">
-                                {post.locationName}
-                            </strong>
-                        </div>
-                    </div>
 
-                    {verifiedMethods ? (
-                        <div className="space-y-4">
-                            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 p-4 text-center">
-                                <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-400" />
-                                <h4 className="mt-2 text-sm font-bold text-emerald-200">
-                                    Verification Successful!
-                                </h4>
-                                <p className="mt-1 text-neutral-300">
-                                    You successfully answered the poster&apos;s
-                                    verification question.
-                                </p>
+                        {dropOffHub && (
+                            <div className="rounded-xl border border-border bg-subtle p-3 text-text">
+                                <strong>Suggested Campus Drop-Off:</strong>{" "}
+                                {dropOffHub}
                             </div>
+                        )}
 
-                            {dropOffHub && (
-                                <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 text-neutral-200">
-                                    <strong>Suggested Campus Drop-Off:</strong>{" "}
-                                    {dropOffHub}
+                        {verifiedMethods.length > 0 ? (
+                            <div className="space-y-2">
+                                <div className="font-semibold text-text">
+                                    Poster Contact Channels:
                                 </div>
-                            )}
-
-                            {verifiedMethods.length > 0 ? (
-                                <div className="space-y-2">
-                                    <div className="font-semibold text-neutral-300">
-                                        Poster Contact Channels:
+                                {verifiedMethods.map((m, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="flex items-center justify-between rounded-xl border border-border bg-subtle/70 px-3.5 py-2.5 font-medium"
+                                    >
+                                        <span className="font-bold text-accent uppercase">
+                                            {m.kind}
+                                        </span>
+                                        <span className="font-mono text-text">
+                                            {m.value}
+                                        </span>
                                     </div>
-                                    {verifiedMethods.map((m, idx) => (
-                                        <div
-                                            key={idx}
-                                            className="flex items-center justify-between rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 font-medium text-emerald-300"
-                                        >
-                                            <span className="uppercase">
-                                                {m.kind}
-                                            </span>
-                                            <span className="font-mono text-neutral-100">
-                                                {m.value}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-neutral-400">
-                                    This item is managed via anonymous relay
-                                    messaging or deposited at the campus hub.
-                                </p>
-                            )}
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-muted">
+                                This item is managed via anonymous relay
+                                messaging or deposited at the campus hub.
+                            </p>
+                        )}
 
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-500"
-                            >
-                                Close
-                            </button>
+                        <Button
+                            variant="primary"
+                            className="w-full"
+                            onClick={onClose}
+                        >
+                            Done
+                        </Button>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="space-y-3.5">
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 font-semibold text-text">
+                                <ShieldQuestion className="h-4 w-4 text-found" />
+                                <span>Security Question Set by Poster:</span>
+                            </div>
+                            <p className="rounded-xl border border-found-border bg-found-bg p-3 font-medium text-found">
+                                &ldquo;{post.claimQuestionPrompt}&rdquo;
+                            </p>
                         </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="space-y-3.5">
-                            <div className="space-y-1">
-                                <label className="block font-medium text-neutral-300">
-                                    Security Question Set by Poster:
-                                </label>
-                                <p className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 font-medium text-amber-200">
-                                    &ldquo;{post.claimQuestionPrompt}&rdquo;
-                                </p>
-                            </div>
 
-                            {error && (
-                                <div className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-rose-200">
-                                    <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-                                    <span>{error}</span>
-                                </div>
-                            )}
-
-                            <div>
-                                <label
-                                    htmlFor="claim-answer-input"
-                                    className="mb-1 block font-medium text-neutral-300"
-                                >
-                                    Your Answer *
-                                </label>
-                                <input
-                                    id="claim-answer-input"
-                                    type="text"
-                                    required
-                                    value={answer}
-                                    onChange={(e) => setAnswer(e.target.value)}
-                                    placeholder="Type your answer here..."
-                                    className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                                />
+                        {error && (
+                            <div className="flex items-center gap-2 rounded-xl border border-danger/40 bg-danger-bg p-3 text-danger">
+                                <AlertCircle className="h-4 w-4 shrink-0" />
+                                <span>{error}</span>
                             </div>
+                        )}
 
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={onClose}
-                                    className="rounded-xl border border-neutral-800 px-4 py-2 text-neutral-300 hover:bg-neutral-900"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={verifying || !answer.trim()}
-                                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                                >
-                                    <Unlock className="h-4 w-4" />
-                                    <span>
-                                        {verifying
-                                            ? "Verifying..."
-                                            : "Verify Claim"}
-                                    </span>
-                                </button>
-                            </div>
-                        </form>
-                    )}
-                </div>
+                        <Input
+                            id="claim-answer-input"
+                            label="Your Answer *"
+                            required
+                            value={answer}
+                            onChange={(e) => setAnswer(e.target.value)}
+                            placeholder="Type your answer here..."
+                        />
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <Button variant="secondary" onClick={onClose}>
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                loading={verifying}
+                                disabled={!answer.trim()}
+                                leftIcon={<Unlock className="h-4 w-4" />}
+                            >
+                                Verify Claim
+                            </Button>
+                        </div>
+                    </form>
+                )}
             </div>
-        </div>
+        </Modal>
     );
 };
 
