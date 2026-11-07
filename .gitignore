@@ -9,6 +9,7 @@ dist-ssr/
 build/
 
 # Cloudflare Wrangler & Miniflare local state / secrets
+wrangler.toml
 .wrangler/
 .dev.vars
 .dev.vars.*
