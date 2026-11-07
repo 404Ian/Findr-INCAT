@@ -458,7 +458,7 @@ export const QrScanSimulator: React.FC<QrScanSimulatorProps> = ({
                                 id="manual-tag-code"
                                 value={manualInput}
                                 onChange={(e) => setManualInput(e.target.value)}
-                                placeholder="Enter code (e.g., K9M4X7P2Q8LA or T7V3N9R4W2BC)"
+                                placeholder="Enter tag code or URL"
                                 aria-label="Manual Findr tag code"
                                 className="font-mono uppercase placeholder:font-sans placeholder:normal-case"
                             />
