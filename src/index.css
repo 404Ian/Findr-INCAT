@@ -3,58 +3,148 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-    --bg: #fafaf9;
+    /* Surface & Neutral Scale (Warm Paper Notice-Board Light Mode) */
+    --bg: #faf8f5;
     --surface: #ffffff;
-    --subtle: #f4f3f1;
-    --border: #e7e5e4;
+    --surface-raised: #fdfcfb;
+    --subtle: #f3f0eb;
+    --border: #e6e2da;
+    --border-strong: #d4cfc5;
     --text: #1c1917;
+    --text-secondary: #44403c;
     --muted: #78716c;
-    /* INCAT Deep Desaturated Green */
+
+    /* INCAT Deep Desaturated Green Accent */
     --accent: #234b38;
+    --accent-hover: #1b3b2c;
+    --accent-soft: #e9f2ed;
     --accent-fg: #fafaf9;
-    /* Warm Yellow Highlight (used only for found status, active indicators, and 1 accent underline) */
+
+    /* Semantic Status & Feedback Tokens */
     --highlight: #d97706;
-    --lost: #b91c1c;
-    --found: #d97706;
-    --returned: #234b38;
-    --shadow-popover: 0 4px 20px -2px rgba(28, 25, 23, 0.08);
+    --lost: #c23b2b;
+    --lost-bg: #fef2f1;
+    --lost-border: #f8d0cc;
+    --found: #c87a19;
+    --found-bg: #fffbeb;
+    --found-border: #fde68a;
+    --returned: #4b6356;
+    --returned-bg: #eef2ef;
+    --returned-border: #d3ded7;
+    --info: #1d6fa5;
+    --info-bg: #f0f7fc;
+    --danger: #b91c1c;
+    --danger-bg: #fef2f2;
+
+    /* Radii Scale */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-pill: 9999px;
+
+    /* 3 Elevation Levels */
+    --shadow-sm: 0 1px 2px 0 rgba(28, 25, 23, 0.05);
+    --shadow-md:
+        0 4px 12px -2px rgba(28, 25, 23, 0.08),
+        0 2px 4px -2px rgba(28, 25, 23, 0.04);
+    --shadow-lg:
+        0 12px 28px -4px rgba(28, 25, 23, 0.12),
+        0 4px 10px -2px rgba(28, 25, 23, 0.06);
+    --shadow-popover: var(--shadow-md);
 }
 
 .dark {
-    --bg: #121211;
-    --surface: #1a1918;
-    --subtle: #242321;
-    --border: #2e2c2a;
+    /* Deep Charcoal & Campus Green Dark Mode */
+    --bg: #121312;
+    --surface: #191b19;
+    --surface-raised: #202320;
+    --subtle: #242724;
+    --border: #2e322e;
+    --border-strong: #3e433e;
     --text: #f5f5f4;
-    --muted: #a8a29e;
+    --text-secondary: #d6d3d1;
+    --muted: #a19d98;
+
+    /* INCAT Forest Green Accent (Lifted for AA contrast on charcoal) */
     --accent: #356b52;
+    --accent-hover: #418063;
+    --accent-soft: #1b2e25;
     --accent-fg: #fafaf9;
+
+    /* Semantic Status & Feedback Tokens */
     --highlight: #eab308;
-    --lost: #ef4444;
-    --found: #eab308;
-    --returned: #356b52;
-    --shadow-popover: 0 4px 24px -2px rgba(0, 0, 0, 0.48);
+    --lost: #f87171;
+    --lost-bg: rgba(239, 68, 68, 0.14);
+    --lost-border: rgba(248, 113, 113, 0.32);
+    --found: #fbbf24;
+    --found-bg: rgba(234, 179, 8, 0.14);
+    --found-border: rgba(251, 191, 36, 0.32);
+    --returned: #8da999;
+    --returned-bg: rgba(141, 169, 153, 0.14);
+    --returned-border: rgba(141, 169, 153, 0.28);
+    --info: #60a5fa;
+    --info-bg: rgba(59, 130, 246, 0.15);
+    --danger: #f87171;
+    --danger-bg: rgba(239, 68, 68, 0.16);
+
+    /* 3 Elevation Levels */
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.35);
+    --shadow-md:
+        0 6px 16px -2px rgba(0, 0, 0, 0.48), 0 2px 6px -1px rgba(0, 0, 0, 0.32);
+    --shadow-lg:
+        0 16px 36px -4px rgba(0, 0, 0, 0.65),
+        0 6px 14px -2px rgba(0, 0, 0, 0.45);
+    --shadow-popover: var(--shadow-md);
 }
 
 @theme inline {
     --color-bg: var(--bg);
     --color-surface: var(--surface);
+    --color-surface-raised: var(--surface-raised);
     --color-subtle: var(--subtle);
     --color-border: var(--border);
+    --color-border-strong: var(--border-strong);
     --color-text: var(--text);
+    --color-text-secondary: var(--text-secondary);
     --color-muted: var(--muted);
+
     --color-accent: var(--accent);
+    --color-accent-hover: var(--accent-hover);
+    --color-accent-soft: var(--accent-soft);
     --color-accent-fg: var(--accent-fg);
     --color-highlight: var(--highlight);
+
     --color-lost: var(--lost);
+    --color-lost-bg: var(--lost-bg);
+    --color-lost-border: var(--lost-border);
     --color-found: var(--found);
+    --color-found-bg: var(--found-bg);
+    --color-found-border: var(--found-border);
     --color-returned: var(--returned);
+    --color-returned-bg: var(--returned-bg);
+    --color-returned-border: var(--returned-border);
+    --color-info: var(--info);
+    --color-info-bg: var(--info-bg);
+    --color-danger: var(--danger);
+    --color-danger-bg: var(--danger-bg);
+
+    --radius-sm: var(--radius-sm);
+    --radius-md: var(--radius-md);
+    --radius-lg: var(--radius-lg);
+    --radius-pill: var(--radius-pill);
+
+    --shadow-sm: var(--shadow-sm);
+    --shadow-md: var(--shadow-md);
+    --shadow-lg: var(--shadow-lg);
     --shadow-popover: var(--shadow-popover);
+
+    --font-display:
+        "Fraunces", Georgia, Cambria, "Times New Roman", Times, serif;
     --font-sans:
-        "Inter", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        sans-serif;
+        "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, sans-serif;
     --font-mono:
-        "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+        "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
         monospace;
 }
 
@@ -64,6 +154,7 @@
         background-color: var(--bg);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
     }
 
     body {
@@ -73,6 +164,13 @@
         transition:
             background-color 200ms ease,
             color 200ms ease;
+    }
+
+    h1,
+    h2,
+    .font-display {
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
     }
 
     /* 200ms theme crossfade on surfaces only */
@@ -95,7 +193,7 @@
     }
 }
 
-/* Slow, subtle skeleton pulse (not a shimmer sweep) */
+/* Slow, subtle skeleton pulse */
 @keyframes slowPulse {
     0%,
     100% {
@@ -107,7 +205,7 @@
 }
 
 .skeleton-pulse {
-    animation: slowPulse 2.2s ease-in-out infinite;
+    animation: slowPulse 2s ease-in-out infinite;
 }
 
 /* Map Pin Drop & Active Spring Scale */
@@ -149,9 +247,23 @@
     transform: scale(1.3);
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .incat-pin-drop,
+    .skeleton-pulse {
+        animation: none !important;
+    }
+}
+
 .leaflet-container {
+    width: 100%;
+    height: 100%;
     background-color: var(--subtle) !important;
     font-family: var(--font-sans) !important;
+}
+
+.dark .leaflet-container,
+[data-theme="dark"] .leaflet-container {
+    background-color: #161816 !important;
 }
 
 .incat-map-tooltip {
@@ -193,12 +305,10 @@
     text-decoration: underline;
 }
 
-/* Smooth 250ms crossfade on Satellite raster layer */
 .incat-satellite-layer {
     transition: opacity 250ms ease !important;
 }
 
-/* 11px muted building labels (shown at zoom >= 18) */
 .incat-bldg-label-wrapper {
     background: transparent;
     border: 0;
@@ -226,25 +336,6 @@
     background-color: rgba(20, 20, 19, 0.72);
 }
 
-/* Keep MapLibre GL canvas behind Leaflet SVG polygons, labels, and pins */
-.leaflet-gl-layer,
-.maplibregl-canvas-container,
-.maplibregl-canvas {
-    pointer-events: none !important;
-}
-
-/* Ensure Leaflet and MapLibre GL canvas never collapse to 0x0 */
-.leaflet-container {
-    width: 100%;
-    height: 100%;
-    background-color: #e2e8f0;
-}
-
-.dark .leaflet-container,
-[data-theme="dark"] .leaflet-container {
-    background-color: #0f172a;
-}
-
 .leaflet-maplibre-gl-pane,
 .leaflet-maplibre-gl-pane .maplibregl-map,
 .leaflet-maplibre-gl-pane .maplibregl-canvas-container,
@@ -253,14 +344,14 @@
     height: 100% !important;
 }
 
-/* Dark mode filter applied ONLY to the raster tile pane when OSM fallback is active */
-.osm-raster-dark .leaflet-tile-pane {
+.osm-raster-dark .leaflet-tile-pane,
+.incat-osm-dark-raster .leaflet-tile-pane {
     filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
         saturate(0.5);
 }
 
-/* Hub pin permanent tooltip (11px, subtle background, visible at zoom 18+) */
-.leaflet-tooltip.incat-hub-tooltip {
+.leaflet-tooltip.incat-hub-tooltip,
+.leaflet-tooltip.incat-hub-label {
     font-size: 11px;
     line-height: 1.25;
     font-weight: 500;
@@ -277,56 +368,24 @@
 }
 
 .dark .leaflet-tooltip.incat-hub-tooltip,
-[data-theme="dark"] .leaflet-tooltip.incat-hub-tooltip {
+[data-theme="dark"] .leaflet-tooltip.incat-hub-tooltip,
+.dark .leaflet-tooltip.incat-hub-label,
+[data-theme="dark"] .leaflet-tooltip.incat-hub-label {
     background: rgba(15, 23, 42, 0.88);
     color: #f8fafc;
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
-.leaflet-tooltip.incat-hub-tooltip::before {
+.leaflet-tooltip.incat-hub-tooltip::before,
+.leaflet-tooltip.incat-hub-label::before {
     display: none;
 }
 
-/* Hide hub labels below zoom 18 or when collided */
 .hub-labels-hidden .leaflet-tooltip.incat-hub-tooltip,
 .leaflet-tooltip.incat-hub-tooltip.is-colliding {
     opacity: 0 !important;
     visibility: hidden !important;
-}
-
-/* Dark mode filter applied ONLY to the raster tile pane when OSM fallback is active */
-.incat-osm-dark-raster .leaflet-tile-pane {
-    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
-        saturate(0.5);
-}
-
-/* Permanent 11px hub pin tooltip with subtle readable background */
-.leaflet-tooltip.incat-hub-label {
-    font-size: 11px;
-    line-height: 1.25;
-    font-weight: 500;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.88);
-    color: #111827;
-    border: 1px solid rgba(17, 24, 39, 0.12);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-    white-space: nowrap;
-    pointer-events: none;
-    transition: opacity 150ms ease;
-}
-
-.dark .leaflet-tooltip.incat-hub-label,
-[data-theme="dark"] .leaflet-tooltip.incat-hub-label {
-    background: rgba(17, 24, 39, 0.86);
-    color: #f9fafb;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-.leaflet-tooltip.incat-hub-label::before {
-    display: none;
 }
 
 @media print {
@@ -354,16 +413,18 @@
         margin: 0 !important;
         width: 100% !important;
     }
-}
 
-@media print {
     body * {
         visibility: hidden;
     }
+
     #printable-sticker-sheet,
-    #printable-sticker-sheet * {
+    #printable-sticker-sheet *,
+    #findr-printable-sheet,
+    #findr-printable-sheet * {
         visibility: visible;
     }
+
     #printable-sticker-sheet {
         position: fixed;
         inset: 0;

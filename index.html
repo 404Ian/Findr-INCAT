@@ -2,13 +2,43 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        />
         <meta
             http-equiv="Content-Security-Policy"
-            content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org https://server.arcgisonline.com; connect-src 'self' https://tiles.openfreemap.org https://server.arcgisonline.com; worker-src 'self' blob:; font-src 'self' data:;"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://tiles.openfreemap.org https://server.arcgisonline.com https://*.tile.openstreetmap.org; connect-src 'self' https://tiles.openfreemap.org https://server.arcgisonline.com https://*.tile.openstreetmap.org; worker-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com;"
         />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
         <title>Findr | INCAT Lost &amp; Found</title>
+        <script>
+            (function () {
+                try {
+                    var stored = localStorage.getItem("findr-theme");
+                    var prefersDark = window.matchMedia(
+                        "(prefers-color-scheme: dark)",
+                    ).matches;
+                    var isDark =
+                        stored === "dark" ||
+                        ((!stored || stored === "system") && prefersDark);
+                    var root = document.documentElement;
+                    if (isDark) {
+                        root.classList.add("dark");
+                        root.setAttribute("data-theme", "dark");
+                    } else {
+                        root.classList.remove("dark");
+                        root.setAttribute("data-theme", "light");
+                    }
+                } catch (e) {}
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>
