@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
 import {
     AlertTriangle,
     BellRing,
     Check,
+    Clock,
     Copy,
     Download,
     Eye,
@@ -12,15 +14,17 @@ import {
     KeyRound,
     Link2,
     MapPin,
+    MessageSquare,
     Plus,
     Printer,
     QrCode,
     RefreshCw,
+    ScanLine,
+    Scissors,
     ShieldAlert,
     ShieldCheck,
     Sparkles,
     Trash2,
-    X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import {
@@ -31,6 +35,7 @@ import {
     removeCapabilityItem,
     setStoredCampusCode,
 } from "../lib/keys";
+import { SPRING_SNAPPY } from "../lib/motion";
 import { renderQrToDataUrl, renderQrToSvgString } from "../lib/qrGenerator";
 import type {
     ContactConfig,
@@ -42,6 +47,16 @@ import type {
 } from "../types";
 import { ContactMatrix, DEFAULT_CONTACT_CONFIG } from "./ContactMatrix";
 import { PublicTagPage } from "./PublicTagPage";
+import {
+    Button,
+    Card,
+    EmptyState,
+    Input,
+    Modal,
+    Select,
+    Skeleton,
+    useToast,
+} from "./ui/primitives";
 
 export interface QrStickerStudioProps {
     onPreviewTagCode?: (publicCode: string) => void;
@@ -82,10 +97,15 @@ function formatTimeAgo(iso?: string | null): string {
     return `${Math.floor(hrs / 24)}d ago`;
 }
 
+type TimelineEntry =
+    | { kind: "message"; timestamp: number; data: TagMessage }
+    | { kind: "scan"; timestamp: number; data: ScanEvent };
+
 export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
     onPreviewTagCode,
     onTagsChanged,
 }) => {
+    const { showToast } = useToast();
     const [myTags, setMyTags] = useState<Tag[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -164,13 +184,13 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 const url = getTagPublicUrl(t.publicCode);
                 try {
                     nextSvg[t.publicCode] = renderQrToSvgString(url, {
-                        dark: "#052e16",
+                        dark: "#1c1917",
                         light: "#ffffff",
                         margin: 2,
                     });
                     nextPng[t.publicCode] = await renderQrToDataUrl(url, {
                         width: 360,
-                        dark: "#052e16",
+                        dark: "#1c1917",
                         light: "#ffffff",
                         margin: 2,
                     });
@@ -230,6 +250,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setCreatedReceipt(res);
             setLabel("");
             setPhotoFile(null);
+            showToast(`Tag #${res.tag.publicCode} created!`, "success");
             await loadTags();
         } catch (err: unknown) {
             if (
@@ -257,7 +278,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         let nextNote = tag.lostNote ?? "";
         if (nextLost && !nextNote) {
             const promptNote = window.prompt(
-                'Optional message shown on the finder banner (e.g., "Left in ICT Lab 2, please drop off at Guidance Office"):',
+                'Optional note shown on the finder banner (e.g., "Left in ICT Lab 2, please drop off at Guidance Office"):',
                 "Left on INCAT campus. Please message me or drop off at the Guard House!",
             );
             if (promptNote === null) return;
@@ -272,11 +293,18 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
+            showToast(
+                nextLost
+                    ? `Lost Mode enabled for ${tag.label}`
+                    : `Lost Mode turned off for ${tag.label}`,
+                nextLost ? "info" : "success",
+            );
         } catch (err: unknown) {
-            alert(
+            showToast(
                 err instanceof Error
                     ? err.message
                     : "Failed to update Lost Mode.",
+                "error",
             );
         }
     };
@@ -294,11 +322,13 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
+            showToast(`New code #${updated.publicCode} generated`, "info");
         } catch (err: unknown) {
-            alert(
+            showToast(
                 err instanceof Error
                     ? err.message
                     : "Failed to regenerate code.",
+                "error",
             );
         }
     };
@@ -312,11 +342,16 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setMyTags((prev) =>
                 prev.map((t) => (t.id === updated.id ? updated : t)),
             );
+            showToast(
+                isCurrentlyRevoked ? "Tag reactivated" : "Tag deactivated",
+                "info",
+            );
         } catch (err: unknown) {
-            alert(
+            showToast(
                 err instanceof Error
                     ? err.message
                     : "Failed to update tag state.",
+                "error",
             );
         }
     };
@@ -333,8 +368,12 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             await api.deleteTag(tag.id);
             removeCapabilityItem(tag.id);
             setMyTags((prev) => prev.filter((t) => t.id !== tag.id));
+            showToast("Tag deleted", "info");
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : "Failed to delete tag.");
+            showToast(
+                err instanceof Error ? err.message : "Failed to delete tag.",
+                "error",
+            );
         }
     };
 
@@ -353,8 +392,9 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 ),
             );
         } catch (err: unknown) {
-            alert(
-                err instanceof Error ? err.message : "Failed to load messages.",
+            showToast(
+                err instanceof Error ? err.message : "Failed to load timeline.",
+                "error",
             );
         } finally {
             setInboxLoading(false);
@@ -376,6 +416,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setRecoveryNotice(
                 `Restored ${restored.kind.toUpperCase()}: "${restored.label}" to this device!`,
             );
+            showToast(`Restored "${restored.label}"`, "success");
             await loadTags();
         } catch (err: unknown) {
             setRecoveryNotice(
@@ -397,6 +438,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
             setRecoveryNotice(
                 `Imported ${items.length} capability key(s) into this browser.`,
             );
+            showToast(`Imported ${items.length} key(s)`, "success");
             await loadTags();
         } catch (err: unknown) {
             setRecoveryNotice(
@@ -432,6 +474,27 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
         }
     };
 
+    // Unified chronological timeline combining messages & scan events
+    const timelineItems = useMemo<TimelineEntry[]>(() => {
+        const entries: TimelineEntry[] = [
+            ...inboxMessages.map(
+                (m): TimelineEntry => ({
+                    kind: "message",
+                    timestamp: new Date(m.createdAt).getTime() || 0,
+                    data: m,
+                }),
+            ),
+            ...inboxScans.map(
+                (s): TimelineEntry => ({
+                    kind: "scan",
+                    timestamp: new Date(s.scannedAt).getTime() || 0,
+                    data: s,
+                }),
+            ),
+        ];
+        return entries.sort((a, b) => b.timestamp - a.timestamp);
+    }, [inboxMessages, inboxScans]);
+
     const printableTags = myTags.filter(
         (t) => selectedTagIds.has(t.id) && !t.revokedAt,
     );
@@ -441,161 +504,81 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
     return (
         <div className="space-y-6">
             <div className="no-print space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
-                    <div>
-                        <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                            <QrCode className="h-4 w-4" />
-                            <span>
-                                Zero-Login QR Tag Studio &middot; My Items
-                            </span>
-                        </div>
-                        <h2 className="mt-1 text-lg font-bold text-neutral-100 sm:text-xl">
-                            Protect Your Campus Belongings with Printable QR
-                            Stickers
-                        </h2>
-                        <p className="mt-0.5 text-xs text-neutral-400">
-                            Anyone at INCAT who scans your sticker with their
-                            phone camera lands on a safe recovery page—without
-                            seeing your private info unless you allow it.
-                        </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2.5">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setCreatedReceipt(null);
-                                setCreateError(null);
-                                setCreateOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span>Create New QR Tag</span>
-                        </button>
-
-                        {printableTags.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => window.print()}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-xs font-semibold text-neutral-100 transition-colors hover:bg-neutral-800"
-                            >
-                                <Printer className="h-4 w-4 text-emerald-400" />
-                                <span>
-                                    Print or Save (
-                                    {printableTags.length})
-                                </span>
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="rounded-2xl border border-neutral-800/90 bg-neutral-900/40 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 text-xs">
-                            <KeyRound className="h-4 w-4 shrink-0 text-amber-400" />
-                            <div>
-                                <span className="font-semibold text-neutral-200">
-                                    Device Key Vault ({vaultCount} saved key
-                                    {vaultCount === 1 ? "" : "s"})
-                                </span>
-                                <span className="ml-2 text-neutral-400">
-                                    No accounts are used. Back up your keys so
-                                    you never lose access if you clear browser
-                                    data.
-                                </span>
+                {/* Studio Header Card */}
+                <Card className="p-5 sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="max-w-xl">
+                            <div className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-accent-soft px-3 py-1 text-xs font-semibold text-accent">
+                                <QrCode className="h-3.5 w-3.5" />
+                                <span>My Items &middot; Printable QR Tags</span>
                             </div>
+                            <h2 className="font-display mt-2 text-xl font-bold text-text sm:text-2xl">
+                                Protect Your Campus Belongings with QR Stickers
+                            </h2>
+                            <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                                Anyone at INCAT who scans your sticker with
+                                their phone camera lands on a calm recovery page
+                                without seeing your private number unless you
+                                choose to share it.
+                            </p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={exportRecoveryJson}
-                                disabled={vaultCount === 0}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 disabled:opacity-40"
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <Button
+                                variant="primary"
+                                onClick={() => {
+                                    setCreatedReceipt(null);
+                                    setCreateError(null);
+                                    setCreateOpen(true);
+                                }}
+                                leftIcon={<Plus className="h-4 w-4" />}
                             >
-                                <FileDown className="h-3.5 w-3.5 text-emerald-400" />
-                                <span>Download Recovery JSON</span>
-                            </button>
+                                Create New QR Tag
+                            </Button>
 
-                            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800">
-                                <FileUp className="h-3.5 w-3.5 text-emerald-400" />
-                                <span>Import Recovery File</span>
-                                <input
-                                    type="file"
-                                    accept="application/json,.json"
-                                    onChange={handleImportRecoveryFile}
-                                    className="sr-only"
-                                />
-                            </label>
+                            {printableTags.length > 0 && (
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => window.print()}
+                                    leftIcon={
+                                        <Printer className="h-4 w-4 text-accent" />
+                                    }
+                                >
+                                    Print A4 Sheet ({printableTags.length})
+                                </Button>
+                            )}
                         </div>
                     </div>
+                </Card>
 
-                    <form
-                        onSubmit={handleRestoreFromKeyOrLink}
-                        className="mt-3 flex flex-wrap items-center gap-2"
-                    >
-                        <div className="relative flex-1">
-                            <Link2 className="pointer-events-none absolute top-2.5 left-3 h-3.5 w-3.5 text-neutral-500" />
-                            <input
-                                type="text"
-                                value={recoveryInput}
-                                onChange={(e) =>
-                                    setRecoveryInput(e.target.value)
-                                }
-                                placeholder="Paste a /manage/:key link or secret key to restore an item on this device..."
-                                aria-label="Restore capability key or link"
-                                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 py-1.5 pr-3 pl-8 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            className="rounded-lg bg-neutral-800 px-3.5 py-1.5 text-xs font-semibold text-neutral-200 hover:bg-neutral-700"
-                        >
-                            Restore Key
-                        </button>
-                    </form>
-
-                    {recoveryNotice && (
-                        <p className="mt-2 text-xs text-emerald-300">
-                            {recoveryNotice}
-                        </p>
-                    )}
-                </div>
-
+                {/* Tag Cards Grid */}
                 {loading ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {[1, 2].map((n) => (
-                            <div
+                            <Skeleton
                                 key={n}
-                                className="h-52 animate-pulse rounded-2xl border border-neutral-800 bg-neutral-900/60"
+                                className="h-56 w-full rounded-2xl"
                             />
                         ))}
                     </div>
                 ) : error ? (
-                    <div className="rounded-2xl border border-rose-500/40 bg-rose-950/20 p-5 text-xs text-rose-200">
+                    <Card className="border-danger/40 bg-danger-bg p-5 text-xs font-medium text-danger">
                         {error}
-                    </div>
+                    </Card>
                 ) : myTags.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-neutral-800 bg-neutral-950/60 p-10 text-center">
-                        <QrCode className="mx-auto h-10 w-10 text-emerald-400/80" />
-                        <h3 className="mt-3 text-sm font-bold text-neutral-100">
-                            No QR Tags on This Device Yet
-                        </h3>
-                        <p className="mx-auto mt-1 max-w-md text-xs text-neutral-400">
-                            Create a tag for your calculator, ID lanyard,
-                            tumbler, or wallet to generate a printable QR
-                            sticker sheet—or import your recovery file above.
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => setCreateOpen(true)}
-                            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span>Create Your First Tag</span>
-                        </button>
-                    </div>
+                    <EmptyState
+                        title="No QR Tags on This Device Yet"
+                        description="Create a tag for your calculator, ID lanyard, tumbler, or wallet to generate a printable A4 sticker sheet—or restore your keys below."
+                        action={
+                            <Button
+                                variant="primary"
+                                onClick={() => setCreateOpen(true)}
+                                leftIcon={<Plus className="h-4 w-4" />}
+                            >
+                                Create Your First Tag
+                            </Button>
+                        }
+                    />
                 ) : (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {myTags.map((tag) => {
@@ -606,127 +589,171 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                             const isRevoked = Boolean(tag.revokedAt);
 
                             return (
-                                <div
+                                <Card
                                     key={tag.id}
-                                    className={`flex flex-col justify-between rounded-2xl border p-4 transition-all ${
+                                    className={`flex flex-col justify-between p-4 sm:p-5 transition-all ${
                                         isRevoked
-                                            ? "border-neutral-800/60 bg-neutral-950/40 opacity-65"
+                                            ? "opacity-60"
                                             : tag.lostMode
-                                              ? "border-rose-500/60 bg-rose-950/15 shadow-lg"
-                                              : "border-neutral-800 bg-neutral-950"
+                                              ? "border-lost-border bg-lost-bg/35"
+                                              : ""
                                     }`}
                                 >
-                                    <div className="flex items-start gap-4">
-                                        <div className="flex shrink-0 flex-col items-center gap-1.5">
-                                            <div className="h-24 w-24 overflow-hidden rounded-xl border border-neutral-700 bg-white p-1.5">
-                                                {qrPng ? (
-                                                    <img
-                                                        src={qrPng}
-                                                        alt={`QR code for ${tag.label}`}
-                                                        className="h-full w-full object-contain"
-                                                    />
-                                                ) : (
-                                                    <div className="h-full w-full animate-pulse bg-neutral-200" />
-                                                )}
-                                            </div>
-                                            <span className="font-mono text-[11px] font-bold text-emerald-400">
-                                                #{tag.publicCode}
-                                            </span>
-                                        </div>
-
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-1.5">
-                                                {isRevoked ? (
-                                                    <span className="rounded-md bg-neutral-800 px-2 py-0.5 text-[10px] font-bold text-neutral-400 uppercase">
-                                                        Revoked
-                                                    </span>
-                                                ) : tag.lostMode ? (
-                                                    <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 uppercase">
-                                                        <BellRing className="h-3 w-3" />
-                                                        Lost Mode Active
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300 uppercase">
-                                                        <ShieldCheck className="h-3 w-3" />
-                                                        Protected
-                                                    </span>
-                                                )}
-
-                                                {tag.unreadMessageCount > 0 && (
-                                                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-neutral-950">
-                                                        {tag.unreadMessageCount}{" "}
-                                                        new msg
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <h3 className="mt-1.5 truncate text-base font-bold text-neutral-100">
-                                                {tag.label}
-                                            </h3>
-
-                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400">
-                                                <span>
-                                                    Scans:{" "}
-                                                    <strong className="text-neutral-200">
-                                                        {tag.scanCount}
-                                                    </strong>
-                                                </span>
-                                                <span>&middot;</span>
-                                                <span>
-                                                    Last scan:{" "}
-                                                    {formatTimeAgo(
-                                                        tag.lastScannedAt,
+                                    <div>
+                                        <div className="flex items-start gap-4">
+                                            {/* QR Preview Thumbnail */}
+                                            <div className="flex shrink-0 flex-col items-center gap-1.5">
+                                                <div className="h-24 w-24 overflow-hidden rounded-xl border border-border-strong bg-white p-1.5 shadow-sm">
+                                                    {qrPng ? (
+                                                        <img
+                                                            src={qrPng}
+                                                            alt={`QR code for ${tag.label}`}
+                                                            className="h-full w-full object-contain"
+                                                        />
+                                                    ) : (
+                                                        <Skeleton className="h-full w-full" />
                                                     )}
+                                                </div>
+                                                <span className="font-mono text-[11px] font-bold text-accent">
+                                                    #{tag.publicCode}
                                                 </span>
                                             </div>
 
-                                            {tag.contactConfig.dropOffHub && (
-                                                <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-neutral-300">
-                                                    <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+                                            {/* Tag Metadata & Animated Lost Mode Switch */}
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        {isRevoked ? (
+                                                            <span className="rounded-full border border-border bg-subtle px-2.5 py-0.5 text-[10px] font-bold text-muted uppercase">
+                                                                Deactivated
+                                                            </span>
+                                                        ) : tag.lostMode ? (
+                                                            <span className="inline-flex items-center gap-1 rounded-full border border-lost-border bg-lost-bg px-2.5 py-0.5 text-[10px] font-bold text-lost uppercase">
+                                                                <BellRing className="h-3 w-3" />
+                                                                Lost Mode ON
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent-soft px-2.5 py-0.5 text-[10px] font-bold text-accent uppercase">
+                                                                <ShieldCheck className="h-3 w-3" />
+                                                                Protected
+                                                            </span>
+                                                        )}
+
+                                                        {tag.unreadMessageCount >
+                                                            0 && (
+                                                            <span className="rounded-full bg-highlight px-2 py-0.5 text-[10px] font-extrabold text-white">
+                                                                {
+                                                                    tag.unreadMessageCount
+                                                                }{" "}
+                                                                unread
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Animated Lost-Mode Switch */}
+                                                    {!isRevoked && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-[11px] font-semibold text-muted">
+                                                                Lost mode
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                role="switch"
+                                                                aria-checked={
+                                                                    tag.lostMode
+                                                                }
+                                                                aria-label={`Toggle Lost Mode for ${tag.label}`}
+                                                                onClick={() =>
+                                                                    handleToggleLostMode(
+                                                                        tag,
+                                                                    )
+                                                                }
+                                                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                                                                    tag.lostMode
+                                                                        ? "border-lost bg-lost"
+                                                                        : "border-border-strong bg-subtle"
+                                                                }`}
+                                                            >
+                                                                <motion.span
+                                                                    layout
+                                                                    transition={
+                                                                        SPRING_SNAPPY
+                                                                    }
+                                                                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm ${
+                                                                        tag.lostMode
+                                                                            ? "translate-x-5"
+                                                                            : "translate-x-1"
+                                                                    }`}
+                                                                />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <h3 className="font-display mt-2 truncate text-base font-bold text-text">
+                                                    {tag.label}
+                                                </h3>
+
+                                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                                                     <span>
-                                                        Drop-off:{" "}
-                                                        {
-                                                            tag.contactConfig
-                                                                .dropOffHub
-                                                        }
+                                                        Scans:{" "}
+                                                        <strong className="text-text">
+                                                            {tag.scanCount}
+                                                        </strong>
+                                                    </span>
+                                                    <span>&middot;</span>
+                                                    <span>
+                                                        Last scan:{" "}
+                                                        <strong className="text-text-secondary">
+                                                            {formatTimeAgo(
+                                                                tag.lastScannedAt,
+                                                            )}
+                                                        </strong>
                                                     </span>
                                                 </div>
-                                            )}
+
+                                                {tag.contactConfig
+                                                    .dropOffHub && (
+                                                    <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-text-secondary">
+                                                        <MapPin className="h-3.5 w-3.5 text-accent" />
+                                                        <span>
+                                                            Drop-off:{" "}
+                                                            {
+                                                                tag
+                                                                    .contactConfig
+                                                                    .dropOffHub
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-800/80 pt-3 text-xs">
+                                    {/* Card Actions Bar */}
+                                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs">
                                         <div className="flex flex-wrap items-center gap-1.5">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    handleToggleLostMode(tag)
-                                                }
-                                                disabled={isRevoked}
-                                                className={`rounded-lg px-2.5 py-1.5 font-semibold transition-colors ${
-                                                    tag.lostMode
-                                                        ? "bg-rose-600 text-white hover:bg-rose-500"
-                                                        : "border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800"
-                                                }`}
-                                            >
-                                                {tag.lostMode
-                                                    ? "Turn Off Lost Mode"
-                                                    : "Mark Lost"}
-                                            </button>
-
-                                            <button
-                                                type="button"
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
                                                 onClick={() =>
                                                     handleOpenInbox(tag)
                                                 }
-                                                className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 font-medium text-neutral-200 hover:bg-neutral-800"
+                                                leftIcon={
+                                                    <Inbox className="h-3.5 w-3.5 text-accent" />
+                                                }
                                             >
-                                                <Inbox className="h-3.5 w-3.5 text-emerald-400" />
-                                                <span>Messages & Scans</span>
-                                            </button>
+                                                Timeline
+                                                {tag.unreadMessageCount > 0 && (
+                                                    <span className="ml-1 rounded-full bg-highlight px-1.5 py-0.2 text-[10px] font-bold text-white">
+                                                        {tag.unreadMessageCount}
+                                                    </span>
+                                                )}
+                                            </Button>
 
-                                            <button
-                                                type="button"
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
                                                 onClick={() => {
                                                     setPreviewPublicCode(
                                                         tag.publicCode,
@@ -735,12 +762,12 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                         tag.publicCode,
                                                     );
                                                 }}
-                                                className="inline-flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900/70 px-2.5 py-1.5 text-neutral-300 hover:bg-neutral-800"
-                                                title="Preview what a finder sees when scanning"
+                                                leftIcon={
+                                                    <Eye className="h-3.5 w-3.5" />
+                                                }
                                             >
-                                                <Eye className="h-3.5 w-3.5" />
-                                                <span>Finder Page</span>
-                                            </button>
+                                                Finder View
+                                            </Button>
                                         </div>
 
                                         <div className="flex items-center gap-1">
@@ -752,7 +779,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                         "png",
                                                     )
                                                 }
-                                                className="rounded-lg border border-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-800"
+                                                className="rounded-lg border border-border bg-subtle px-2 py-1 text-[11px] font-semibold text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
                                                 title="Download QR as PNG"
                                             >
                                                 PNG
@@ -765,7 +792,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                         "svg",
                                                     )
                                                 }
-                                                className="rounded-lg border border-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-800"
+                                                className="rounded-lg border border-border bg-subtle px-2 py-1 text-[11px] font-semibold text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
                                                 title="Download QR as SVG"
                                             >
                                                 SVG
@@ -775,8 +802,9 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                 onClick={() =>
                                                     handleRegenerateCode(tag)
                                                 }
-                                                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-text cursor-pointer"
                                                 title="Regenerate QR code (invalidates old sticker)"
+                                                aria-label="Regenerate QR code"
                                             >
                                                 <RefreshCw className="h-3.5 w-3.5" />
                                             </button>
@@ -785,11 +813,16 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                 onClick={() =>
                                                     handleToggleRevoke(tag)
                                                 }
-                                                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-amber-400"
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-found cursor-pointer"
                                                 title={
                                                     isRevoked
                                                         ? "Reactivate tag"
-                                                        : "Revoke tag"
+                                                        : "Deactivate tag"
+                                                }
+                                                aria-label={
+                                                    isRevoked
+                                                        ? "Reactivate tag"
+                                                        : "Deactivate tag"
                                                 }
                                             >
                                                 <ShieldAlert className="h-3.5 w-3.5" />
@@ -799,8 +832,9 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                 onClick={() =>
                                                     handleDeleteTag(tag)
                                                 }
-                                                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-rose-400"
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-danger cursor-pointer"
                                                 title="Delete tag"
+                                                aria-label="Delete tag"
                                             >
                                                 <Trash2 className="h-3.5 w-3.5" />
                                             </button>
@@ -808,7 +842,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                     </div>
 
                                     {!isRevoked && (
-                                        <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] text-neutral-400">
+                                        <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] font-medium text-muted">
                                             <input
                                                 type="checkbox"
                                                 checked={isSelectedForPrint}
@@ -831,81 +865,171 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                                         },
                                                     );
                                                 }}
-                                                className="h-3.5 w-3.5 rounded border-neutral-600 text-emerald-600"
+                                                className="h-3.5 w-3.5 rounded border-border-strong accent-accent"
                                             />
                                             <span>
-                                                Include on print sheet (A4) for stickers    
+                                                Include on A4 printable sticker
+                                                sheet
                                             </span>
                                         </label>
                                     )}
-                                </div>
+                                </Card>
                             );
                         })}
                     </div>
                 )}
 
+                {/* Safe & Obvious Manage-Link / Device Recovery Vault (Warning Style) */}
+                <Card className="border-found-border bg-found-bg/40 p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 text-xs">
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-found-bg text-found border border-found-border">
+                                <KeyRound className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <div className="font-display text-sm font-bold text-text">
+                                    Device Capability Vault ({vaultCount} saved
+                                    key{vaultCount === 1 ? "" : "s"})
+                                </div>
+                                <p className="mt-0.5 max-w-xl leading-relaxed text-text-secondary">
+                                    Findr INCAT uses{" "}
+                                    <strong>no accounts or passwords</strong>.
+                                    Download a backup of your recovery keys so
+                                    you never lose control of your tags or posts
+                                    if you clear browser data or change phones.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={exportRecoveryJson}
+                                disabled={vaultCount === 0}
+                                leftIcon={
+                                    <FileDown className="h-3.5 w-3.5 text-accent" />
+                                }
+                            >
+                                Backup Recovery JSON
+                            </Button>
+
+                            <label className="inline-flex min-h-9.5 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-text shadow-sm transition-colors hover:bg-subtle">
+                                <FileUp className="h-3.5 w-3.5 text-accent" />
+                                <span>Import Backup File</span>
+                                <input
+                                    type="file"
+                                    accept="application/json,.json"
+                                    onChange={handleImportRecoveryFile}
+                                    className="sr-only"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <form
+                        onSubmit={handleRestoreFromKeyOrLink}
+                        className="mt-3.5 flex flex-col gap-2 sm:flex-row sm:items-center"
+                    >
+                        <div className="relative flex-1">
+                            <Link2 className="pointer-events-none absolute top-1/2 left-3.5 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+                            <input
+                                type="text"
+                                value={recoveryInput}
+                                onChange={(e) =>
+                                    setRecoveryInput(e.target.value)
+                                }
+                                placeholder="Paste a /manage/:key link or secret key to restore an item on this device..."
+                                aria-label="Restore capability key or link"
+                                className="min-h-10 w-full rounded-xl border border-border bg-surface py-1.5 pr-3 pl-9 text-xs text-text placeholder:text-muted focus:border-accent focus:outline-none"
+                            />
+                        </div>
+                        <Button type="submit" variant="secondary" size="sm">
+                            Restore Key
+                        </Button>
+                    </form>
+
+                    {recoveryNotice && (
+                        <p className="mt-2 text-xs font-semibold text-accent">
+                            {recoveryNotice}
+                        </p>
+                    )}
+                </Card>
+
+                {/* Print Layout Controls */}
                 {printableTags.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 px-5 py-3.5 text-xs">
-                        <div className="flex items-center gap-3">
-                            <span className="font-semibold text-neutral-200">
-                                Print Preview (A4)
+                    <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 text-xs">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <span className="font-display text-sm font-bold text-text">
+                                Printable A4 Sticker Sheet Preview
                             </span>
-                            <div className="inline-flex rounded-lg border border-neutral-800 bg-neutral-900 p-0.5">
+                            <div className="inline-flex rounded-xl border border-border bg-subtle p-1">
                                 <button
                                     type="button"
                                     onClick={() => setStickerSize("small")}
-                                    className={`rounded-md px-2.5 py-1 font-medium ${
+                                    className={`rounded-lg px-3 py-1 font-semibold transition-colors cursor-pointer ${
                                         stickerSize === "small"
-                                            ? "bg-emerald-600 text-white"
-                                            : "text-neutral-400 hover:text-neutral-200"
+                                            ? "bg-accent text-accent-fg"
+                                            : "text-text-secondary hover:text-text"
                                     }`}
                                 >
-                                    Small (3-col)
+                                    Compact (3-col)
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setStickerSize("medium")}
-                                    className={`rounded-md px-2.5 py-1 font-medium ${
+                                    className={`rounded-lg px-3 py-1 font-semibold transition-colors cursor-pointer ${
                                         stickerSize === "medium"
-                                            ? "bg-emerald-600 text-white"
-                                            : "text-neutral-400 hover:text-neutral-200"
+                                            ? "bg-accent text-accent-fg"
+                                            : "text-text-secondary hover:text-text"
                                     }`}
                                 >
-                                    Medium (2-col)
+                                    Standard (2-col)
                                 </button>
                             </div>
                         </div>
 
-                        <button
-                            type="button"
+                        <Button
+                            variant="primary"
+                            size="sm"
                             onClick={() => window.print()}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500"
+                            leftIcon={<Printer className="h-4 w-4" />}
                         >
-                            <Printer className="h-4 w-4" />
-                            <span>Print or Save</span>
-                        </button>
-                    </div>
+                            Print or Save PDF
+                        </Button>
+                    </Card>
                 )}
             </div>
 
+            {/* ================================================================
+             * CRISP A4 PRINTABLE STICKER SHEET (@media print)
+             * ============================================================== */}
             {printableTags.length > 0 && (
                 <div
                     id="findr-printable-sheet"
-                    className="print-sheet rounded-2xl border border-neutral-800 bg-white p-6 text-neutral-900 shadow-xl"
+                    style={{
+                        WebkitPrintColorAdjust: "exact",
+                        printColorAdjust: "exact",
+                    }}
+                    className="print-sheet rounded-2xl border border-border-strong bg-white p-6 text-black shadow-md"
                 >
-                    <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-3">
+                    <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-3">
                         <div>
-                            <div className="text-sm font-extrabold tracking-tight text-emerald-950">
-                                FINDR INCAT &middot; CAMPUS RECOVERY SYSTEM
+                            <div className="text-sm font-extrabold tracking-tight text-black">
+                                FINDR INCAT &middot; CAMPUS LOST &amp; FOUND QR
+                                LABELS
                             </div>
-                            <div className="text-[11px] text-neutral-600">
-                                Cut along the dashed lines and stick onto your
-                                calculator, ID holder, tumbler, or charger.
-                                Cover with clear tape for waterproofing.
+                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-neutral-700">
+                                <Scissors className="h-3.5 w-3.5" />
+                                <span>
+                                    Cut along the dashed cut guides. Cover with
+                                    clear tape for water &amp; scratch
+                                    protection.
+                                </span>
                             </div>
                         </div>
-                        <div className="text-right font-mono text-[11px] text-neutral-500">
-                            myfindr.pages.dev
+                        <div className="text-right font-mono text-[11px] font-bold text-neutral-700">
+                            INCAT &middot; LAOAG CITY
                         </div>
                     </div>
 
@@ -921,14 +1045,14 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                             return (
                                 <div
                                     key={tag.id}
-                                    className={`flex items-center gap-3.5 rounded-xl border-2 border-dashed border-neutral-400 bg-white ${
+                                    className={`relative flex items-center gap-3.5 rounded-xl border-2 border-dashed border-neutral-500 bg-white text-black ${
                                         stickerSize === "small"
                                             ? "p-2.5"
                                             : "p-3.5"
                                     }`}
                                 >
                                     <div
-                                        className={`shrink-0 rounded-lg border border-neutral-300 bg-white p-1 ${
+                                        className={`shrink-0 rounded-lg border-2 border-black bg-white p-1 ${
                                             stickerSize === "small"
                                                 ? "h-20 w-20"
                                                 : "h-28 w-28"
@@ -944,33 +1068,36 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                     </div>
 
                                     <div className="min-w-0 flex-1">
-                                        <div className="inline-flex items-center gap-1 rounded bg-emerald-900 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider text-white uppercase">
+                                        <div className="inline-flex items-center gap-1 rounded bg-[#234b38] px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-white uppercase">
                                             <span>FINDR INCAT</span>
                                             <span>&middot;</span>
-                                            <span>#{tag.publicCode}</span>
+                                            <span className="font-mono">
+                                                #{tag.publicCode}
+                                            </span>
                                         </div>
 
                                         <div
-                                            className={`mt-1 font-extrabold text-neutral-950 ${
+                                            className={`mt-1 font-extrabold leading-tight text-black ${
                                                 stickerSize === "small"
                                                     ? "text-xs"
                                                     : "text-sm"
                                             }`}
                                         >
-                                            Found this? Scan me!
+                                            Found this? Scan me
                                         </div>
 
-                                        <div className="text-[10px] font-medium text-neutral-700">
-                                            If found, please scan the QR Code.
+                                        <div className="text-[10px] font-semibold italic text-neutral-800">
+                                            Nahanap mo ba ito? I-scan ang QR
+                                            code.
                                         </div>
 
-                                        <div className="mt-1.5 truncate border-t border-neutral-200 pt-1 text-xs font-bold text-emerald-950">
+                                        <div className="mt-1.5 truncate border-t border-neutral-300 pt-1 text-xs font-extrabold text-black">
                                             {tag.label}
                                         </div>
 
                                         {tag.contactConfig.dropOffHub && (
-                                            <div className="truncate text-[10px] text-neutral-600">
-                                                Preferred Drop-off:{" "}
+                                            <div className="truncate text-[10px] font-medium text-neutral-700">
+                                                Drop off:{" "}
                                                 {tag.contactConfig.dropOffHub}
                                             </div>
                                         )}
@@ -982,413 +1109,337 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                 </div>
             )}
 
-            {createOpen && (
-                <div
-                    className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-neutral-100 shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                            <h3 className="text-base font-bold">
-                                {createdReceipt
-                                    ? "QR Tag Created — Save Your Manage Key"
-                                    : "Create Printable Findr QR Tag"}
-                            </h3>
-                            <button
-                                type="button"
-                                onClick={() => setCreateOpen(false)}
-                                className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-800"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
+            {/* ================================================================
+             * CREATE QR TAG MODAL
+             * ============================================================== */}
+            <Modal
+                isOpen={createOpen}
+                onClose={() => setCreateOpen(false)}
+                title={
+                    createdReceipt
+                        ? "QR Tag Created — Save Your Manage Key"
+                        : "Create Printable Findr QR Tag"
+                }
+                description={
+                    createdReceipt
+                        ? "Save your recovery link before closing."
+                        : "Generate a privacy-safe QR sticker for your campus item."
+                }
+                maxWidthClass="max-w-xl"
+            >
+                {createdReceipt ? (
+                    <div className="space-y-4 text-xs">
+                        <div className="rounded-2xl border border-accent/30 bg-accent-soft p-4">
+                            <div className="flex items-center gap-2 text-sm font-bold text-accent">
+                                <Sparkles className="h-4 w-4" />
+                                <span>
+                                    Tag #{createdReceipt.tag.publicCode} is
+                                    ready to print!
+                                </span>
+                            </div>
+                            <p className="mt-1 leading-relaxed text-text-secondary">
+                                The QR code encodes only{" "}
+                                <code className="font-mono font-semibold text-accent">
+                                    {getTagPublicUrl(
+                                        createdReceipt.tag.publicCode,
+                                    )}
+                                </code>
+                                . Your personal phone number is never embedded
+                                inside the printed QR image itself.
+                            </p>
                         </div>
 
-                        {createdReceipt ? (
-                            <div className="mt-4 space-y-4 text-xs">
-                                <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/25 p-4">
-                                    <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
-                                        <Sparkles className="h-4 w-4" />
-                                        <span>
-                                            Tag #{createdReceipt.tag.publicCode}{" "}
-                                            is ready to print!
-                                        </span>
-                                    </div>
-                                    <p className="mt-1 text-neutral-300">
-                                        The QR code encodes only{" "}
-                                        <code className="text-emerald-300">
-                                            {getTagPublicUrl(
-                                                createdReceipt.tag.publicCode,
-                                            )}
-                                        </code>
-                                        . Your personal contact data is never
-                                        embedded inside the QR image itself.
-                                    </p>
-                                </div>
-
-                                <div className="rounded-xl border border-amber-500/50 bg-amber-950/20 p-4">
-                                    <div className="flex items-center gap-2 font-bold text-amber-300">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        <span>
-                                            Important: Save your secret Manage
-                                            Key (shown once)
-                                        </span>
-                                    </div>
-                                    <p className="mt-1 text-neutral-300">
-                                        Because Findr has no user accounts,
-                                        losing this key means losing control of
-                                        this tag if you clear your browser or
-                                        switch phones. There is no password
-                                        reset.
-                                    </p>
-
-                                    <div className="mt-3 flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            readOnly
-                                            value={`${window.location.origin}${createdReceipt.manageUrl}`}
-                                            className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-emerald-300"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={async () => {
-                                                await navigator.clipboard.writeText(
-                                                    `${window.location.origin}${createdReceipt.manageUrl}`,
-                                                );
-                                                setCopiedReceipt(true);
-                                                setTimeout(
-                                                    () =>
-                                                        setCopiedReceipt(false),
-                                                    2000,
-                                                );
-                                            }}
-                                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 font-semibold text-white hover:bg-emerald-500"
-                                        >
-                                            {copiedReceipt ? (
-                                                <>
-                                                    <Check className="h-3.5 w-3.5" />
-                                                    <span>Copied</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Copy className="h-3.5 w-3.5" />
-                                                    <span>Copy Link</span>
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={exportRecoveryJson}
-                                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 font-medium text-neutral-200 hover:bg-neutral-800"
-                                    >
-                                        <Download className="h-3.5 w-3.5 text-emerald-400" />
-                                        <span>Download Recovery JSON File</span>
-                                    </button>
-                                </div>
-
-                                <div className="flex justify-end pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCreateOpen(false)}
-                                        className="rounded-xl bg-emerald-600 px-5 py-2 font-semibold text-white hover:bg-emerald-500"
-                                    >
-                                        Done & View Sticker
-                                    </button>
-                                </div>
+                        <div className="rounded-2xl border border-found-border bg-found-bg p-4">
+                            <div className="flex items-center gap-2 font-bold text-found">
+                                <AlertTriangle className="h-4 w-4 shrink-0" />
+                                <span>
+                                    Important: Save your secret Manage Key
+                                    (shown once)
+                                </span>
                             </div>
-                        ) : (
-                            <form
-                                onSubmit={handleCreateTag}
-                                className="mt-4 space-y-4"
-                            >
-                                {createError && (
-                                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-xs text-rose-200">
-                                        {createError}
-                                    </div>
-                                )}
+                            <p className="mt-1 leading-relaxed text-text-secondary">
+                                Because Findr has no user accounts, you need
+                                this link or recovery file if you clear your
+                                browser data or switch phones.
+                            </p>
 
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div>
-                                        <label
-                                            htmlFor="tag-label"
-                                            className="mb-1 block text-xs font-medium text-neutral-300"
-                                        >
-                                            Item Name / Label *
-                                        </label>
-                                        <input
-                                            id="tag-label"
-                                            type="text"
-                                            required
-                                            maxLength={80}
-                                            value={label}
-                                            onChange={(e) =>
-                                                setLabel(e.target.value)
-                                            }
-                                            placeholder="e.g., Casio fx-991EX Calculator"
-                                            className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-100"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label
-                                            htmlFor="tag-item-type"
-                                            className="mb-1 block text-xs font-medium text-neutral-300"
-                                        >
-                                            Item Category *
-                                        </label>
-                                        <select
-                                            id="tag-item-type"
-                                            value={itemType}
-                                            onChange={(e) =>
-                                                setItemType(
-                                                    e.target
-                                                        .value as ItemCategory,
-                                                )
-                                            }
-                                            className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-100"
-                                        >
-                                            {ITEM_TYPE_OPTIONS.map((opt) => (
-                                                <option
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="mb-1 block text-xs font-medium text-neutral-300">
-                                        Optional Item Photo (Shown on finder
-                                        page)
-                                    </label>
-                                    <input
-                                        type="file"
-                                        accept="image/jpeg,image/png,image/webp"
-                                        onChange={(e) =>
-                                            setPhotoFile(
-                                                e.target.files?.[0] ?? null,
-                                            )
-                                        }
-                                        className="w-full text-xs text-neutral-400 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-800 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-neutral-200"
-                                    />
-                                </div>
-
-                                <ContactMatrix
-                                    value={contactConfig}
-                                    onChange={setContactConfig}
-                                    compact
+                            <div className="mt-3 flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    readOnly
+                                    aria-label="Secret tag management URL"
+                                    value={`${window.location.origin}${createdReceipt.manageUrl}`}
+                                    className="min-h-10 w-full rounded-xl border border-border bg-surface px-3 py-2 font-mono text-xs text-accent"
                                 />
-
-                                {needsCampusCode && (
-                                    <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3">
-                                        <label
-                                            htmlFor="tag-campus-code"
-                                            className="block text-xs font-semibold text-amber-200"
-                                        >
-                                            INCAT Campus Access Code
-                                        </label>
-                                        <input
-                                            id="tag-campus-code"
-                                            type="text"
-                                            value={campusCode}
-                                            onChange={(e) =>
-                                                setCampusCode(e.target.value)
-                                            }
-                                            placeholder="Enter campus code (e.g., INCAT2026)"
-                                            className="mt-1.5 w-full rounded-lg border border-amber-500/40 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-100"
-                                        />
-                                    </div>
-                                )}
-
-                                <div className="flex items-center justify-end gap-2 border-t border-neutral-800 pt-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCreateOpen(false)}
-                                        className="rounded-xl border border-neutral-800 px-4 py-2 text-xs text-neutral-300"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={creating}
-                                        className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                                    >
-                                        {creating
-                                            ? "Generating QR Tag..."
-                                            : "Generate QR Sticker"}
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {inboxTag && (
-                <div
-                    className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-neutral-100 shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                            <div>
-                                <h3 className="text-base font-bold">
-                                    {inboxTag.label}
-                                </h3>
-                                <p className="text-xs text-neutral-400">
-                                    Tag #{inboxTag.publicCode} &middot; Finder
-                                    Messages & Scan Log
-                                </p>
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={async () => {
+                                        await navigator.clipboard.writeText(
+                                            `${window.location.origin}${createdReceipt.manageUrl}`,
+                                        );
+                                        setCopiedReceipt(true);
+                                        setTimeout(
+                                            () => setCopiedReceipt(false),
+                                            2000,
+                                        );
+                                    }}
+                                    leftIcon={
+                                        copiedReceipt ? (
+                                            <Check className="h-3.5 w-3.5" />
+                                        ) : (
+                                            <Copy className="h-3.5 w-3.5" />
+                                        )
+                                    }
+                                >
+                                    {copiedReceipt ? "Copied" : "Copy"}
+                                </Button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setInboxTag(null)}
-                                className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-800"
+
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={exportRecoveryJson}
+                                leftIcon={
+                                    <Download className="h-3.5 w-3.5 text-accent" />
+                                }
+                                className="mt-3"
                             >
-                                <X className="h-5 w-5" />
-                            </button>
+                                Download Recovery JSON File
+                            </Button>
                         </div>
 
-                        {inboxLoading ? (
-                            <div className="space-y-3 py-6">
-                                <div className="h-16 animate-pulse rounded-xl bg-neutral-900" />
-                                <div className="h-16 animate-pulse rounded-xl bg-neutral-900" />
-                            </div>
-                        ) : (
-                            <div className="mt-4 space-y-5 text-xs">
-                                <div>
-                                    <h4 className="font-semibold tracking-wider text-neutral-300 uppercase">
-                                        Finder Relay Messages (
-                                        {inboxMessages.length})
-                                    </h4>
-                                    {inboxMessages.length === 0 ? (
-                                        <p className="mt-2 rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-3 text-neutral-400">
-                                            No messages yet for this tag.
-                                        </p>
-                                    ) : (
-                                        <div className="mt-2 space-y-2.5">
-                                            {inboxMessages.map((m) => (
-                                                <div
-                                                    key={m.id}
-                                                    className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-3.5"
-                                                >
-                                                    <div className="flex items-center justify-between text-[11px] text-neutral-400">
-                                                        <span>
-                                                            {formatTimeAgo(
-                                                                m.createdAt,
-                                                            )}
-                                                        </span>
-                                                        {m.foundAtHub && (
-                                                            <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-300">
-                                                                Hub:{" "}
-                                                                {m.foundAtHub}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="mt-1.5 text-neutral-100">
-                                                        {m.body}
-                                                    </p>
-                                                    {m.finderContact && (
-                                                        <div className="mt-2 border-t border-neutral-800 pt-1.5 text-emerald-300">
-                                                            Finder contact:{" "}
-                                                            <strong>
-                                                                {
-                                                                    m.finderContact
-                                                                }
-                                                            </strong>
-                                                        </div>
-                                                    )}
-                                                    {m.approxLocation && (
-                                                        <div className="mt-1 text-[11px] text-neutral-400">
-                                                            Shared GPS:{" "}
-                                                            {
-                                                                m.approxLocation
-                                                                    .lat
-                                                            }
-                                                            ,{" "}
-                                                            {
-                                                                m.approxLocation
-                                                                    .lng
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <h4 className="font-semibold tracking-wider text-neutral-300 uppercase">
-                                        Recent Scan Events ({inboxScans.length})
-                                    </h4>
-                                    {inboxScans.length === 0 ? (
-                                        <p className="mt-2 text-neutral-500">
-                                            No scans recorded yet.
-                                        </p>
-                                    ) : (
-                                        <ul className="mt-2 divide-y divide-neutral-800 rounded-xl border border-neutral-800 bg-neutral-900/40">
-                                            {inboxScans.map((s) => (
-                                                <li
-                                                    key={s.id}
-                                                    className="flex items-center justify-between px-3 py-2 text-neutral-300"
-                                                >
-                                                    <span>
-                                                        Scanned{" "}
-                                                        {formatTimeAgo(
-                                                            s.scannedAt,
-                                                        )}
-                                                    </span>
-                                                    {s.approxLocation ? (
-                                                        <span className="font-mono text-[11px] text-emerald-400">
-                                                            GPS:{" "}
-                                                            {
-                                                                s.approxLocation
-                                                                    .lat
-                                                            }
-                                                            ,{" "}
-                                                            {
-                                                                s.approxLocation
-                                                                    .lng
-                                                            }
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[11px] text-neutral-500">
-                                                            No GPS shared
-                                                        </span>
-                                                    )}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
+                        <div className="flex justify-end pt-2">
+                            <Button
+                                variant="primary"
+                                onClick={() => setCreateOpen(false)}
+                            >
+                                Done &amp; View Sticker
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <form onSubmit={handleCreateTag} className="space-y-4">
+                        {createError && (
+                            <div className="rounded-xl border border-danger/40 bg-danger-bg p-3 text-xs font-medium text-danger">
+                                {createError}
                             </div>
                         )}
-                    </div>
-                </div>
-            )}
 
-            {previewPublicCode && (
-                <div
-                    className="no-print fixed inset-0 z-50 overflow-y-auto bg-black/85 p-4 backdrop-blur-sm"
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <div className="mx-auto max-w-lg pt-4">
-                        <PublicTagPage
-                            publicCode={previewPublicCode}
-                            previewMode
-                            onBack={() => setPreviewPublicCode(null)}
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <Input
+                                id="tag-label"
+                                label="Item Name / Label *"
+                                required
+                                maxLength={80}
+                                value={label}
+                                onChange={(e) => setLabel(e.target.value)}
+                                placeholder="e.g., Casio fx-991EX Calculator"
+                            />
+
+                            <Select
+                                id="tag-item-type"
+                                label="Item Category *"
+                                value={itemType}
+                                onChange={(e) =>
+                                    setItemType(e.target.value as ItemCategory)
+                                }
+                            >
+                                {ITEM_TYPE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </Select>
+                        </div>
+
+                        <div>
+                            <label
+                                htmlFor="tag-photo-upload"
+                                className="mb-1.5 block text-xs font-semibold text-text"
+                            >
+                                Optional Item Photo (Shown on finder page)
+                            </label>
+                            <input
+                                id="tag-photo-upload"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={(e) =>
+                                    setPhotoFile(e.target.files?.[0] ?? null)
+                                }
+                                className="w-full text-xs text-muted file:mr-3 file:rounded-lg file:border file:border-border file:bg-subtle file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-text hover:file:bg-surface"
+                            />
+                        </div>
+
+                        <ContactMatrix
+                            value={contactConfig}
+                            onChange={setContactConfig}
+                            compact
                         />
+
+                        {needsCampusCode && (
+                            <div className="rounded-xl border border-found-border bg-found-bg p-3">
+                                <Input
+                                    id="tag-campus-code"
+                                    label="INCAT Campus Access Code"
+                                    value={campusCode}
+                                    onChange={(e) =>
+                                        setCampusCode(e.target.value)
+                                    }
+                                    placeholder="Enter campus code (e.g., INCAT2026)"
+                                />
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+                            <Button
+                                variant="secondary"
+                                onClick={() => setCreateOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                loading={creating}
+                            >
+                                Generate QR Sticker
+                            </Button>
+                        </div>
+                    </form>
+                )}
+            </Modal>
+
+            {/* ================================================================
+             * UNIFIED MESSAGES & SCAN HISTORY TIMELINE MODAL
+             * ============================================================== */}
+            <Modal
+                isOpen={Boolean(inboxTag)}
+                onClose={() => setInboxTag(null)}
+                title={inboxTag ? inboxTag.label : "Tag Activity Timeline"}
+                description={
+                    inboxTag
+                        ? `Tag #${inboxTag.publicCode} · Chronological finder messages and scan events`
+                        : undefined
+                }
+                maxWidthClass="max-w-lg"
+            >
+                {inboxLoading ? (
+                    <div className="space-y-3 py-4">
+                        <Skeleton className="h-20 w-full" />
+                        <Skeleton className="h-16 w-full" />
+                        <Skeleton className="h-16 w-full" />
                     </div>
-                </div>
-            )}
+                ) : timelineItems.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border-strong bg-subtle/40 p-8 text-center text-xs text-muted">
+                        <Clock className="mx-auto mb-2 h-7 w-7 text-muted" />
+                        <div className="font-semibold text-text">
+                            No scans or messages yet
+                        </div>
+                        <p className="mt-1">
+                            Whenever someone scans #{inboxTag?.publicCode} or
+                            sends a message, it will appear here in real time.
+                        </p>
+                    </div>
+                ) : (
+                    <ol className="relative ml-3 space-y-4 border-l-2 border-border pl-5 text-xs">
+                        {timelineItems.map((entry) => {
+                            if (entry.kind === "message") {
+                                const m = entry.data;
+                                return (
+                                    <li
+                                        key={`msg-${m.id}`}
+                                        className="relative"
+                                    >
+                                        <span className="absolute -left-7.25 top-1 flex h-5 w-5 items-center justify-center rounded-full border border-accent bg-accent text-accent-fg shadow-sm">
+                                            <MessageSquare className="h-3 w-3" />
+                                        </span>
+                                        <div className="rounded-2xl border border-border bg-subtle/60 p-3.5">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
+                                                <span className="font-bold text-accent uppercase">
+                                                    Finder Message
+                                                </span>
+                                                <span>
+                                                    {formatTimeAgo(m.createdAt)}
+                                                </span>
+                                            </div>
+                                            <p className="mt-1.5 text-sm leading-relaxed text-text">
+                                                {m.body}
+                                            </p>
+                                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                {m.foundAtHub && (
+                                                    <span className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+                                                        <MapPin className="h-3 w-3" />
+                                                        {m.foundAtHub}
+                                                    </span>
+                                                )}
+                                                {m.finderContact && (
+                                                    <span className="rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-[11px] text-text">
+                                                        Reply:{" "}
+                                                        <strong>
+                                                            {m.finderContact}
+                                                        </strong>
+                                                    </span>
+                                                )}
+                                                {m.approxLocation && (
+                                                    <span className="font-mono text-[11px] text-muted">
+                                                        GPS:{" "}
+                                                        {m.approxLocation.lat},{" "}
+                                                        {m.approxLocation.lng}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </li>
+                                );
+                            }
+
+                            const s = entry.data;
+                            return (
+                                <li key={`scan-${s.id}`} className="relative">
+                                    <span className="absolute -left-7.25 top-1 flex h-5 w-5 items-center justify-center rounded-full border border-border-strong bg-surface text-muted">
+                                        <ScanLine className="h-3 w-3" />
+                                    </span>
+                                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3.5 py-2.5">
+                                        <span className="font-medium text-text-secondary">
+                                            QR sticker scanned{" "}
+                                            <strong className="text-text">
+                                                {formatTimeAgo(s.scannedAt)}
+                                            </strong>
+                                        </span>
+                                        {s.approxLocation ? (
+                                            <span className="font-mono text-[11px] text-accent">
+                                                GPS: {s.approxLocation.lat},{" "}
+                                                {s.approxLocation.lng}
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] text-muted">
+                                                Standard scan
+                                            </span>
+                                        )}
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                )}
+            </Modal>
+
+            {/* Finder Page Preview Modal */}
+            <Modal
+                isOpen={Boolean(previewPublicCode)}
+                onClose={() => setPreviewPublicCode(null)}
+                title="Public Finder Page Preview"
+                maxWidthClass="max-w-xl"
+            >
+                {previewPublicCode && (
+                    <PublicTagPage
+                        publicCode={previewPublicCode}
+                        previewMode
+                        onBack={() => setPreviewPublicCode(null)}
+                    />
+                )}
+            </Modal>
         </div>
     );
 };
