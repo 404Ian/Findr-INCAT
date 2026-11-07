@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 
 export interface DeepLinkState {
@@ -7,14 +7,29 @@ export interface DeepLinkState {
     clearPublicTag: () => void;
 }
 
+function parsePublicTagFromLocation(): string | null {
+    if (typeof window === "undefined") return null;
+    const match = window.location.pathname.match(/^\/t\/([A-Za-z0-9_-]+)/);
+    return match ? match[1].toUpperCase() : null;
+}
+
 export function useDeepLinkRoute(onKeyRestored?: () => void): DeepLinkState {
-    const [publicTagCode, setPublicTagCode] = useState<string | null>(() => {
-        if (typeof window === "undefined") return null;
-        const match = window.location.pathname.match(/^\/t\/([A-Za-z0-9_-]+)/);
-        return match ? match[1].toUpperCase() : null;
-    });
+    const [publicTagCode, setPublicTagCode] = useState<string | null>(() =>
+        parsePublicTagFromLocation(),
+    );
     const [restoredNotice, setRestoredNotice] = useState<string | null>(null);
 
+    // Sync with browser Back / Forward navigation
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const onPopState = () => {
+            setPublicTagCode(parsePublicTagFromLocation());
+        };
+        window.addEventListener("popstate", onPopState);
+        return () => window.removeEventListener("popstate", onPopState);
+    }, []);
+
+    // Handle /manage/:key capability recovery links
     useEffect(() => {
         if (typeof window === "undefined") return;
         const manageMatch = window.location.pathname.match(
@@ -39,7 +54,7 @@ export function useDeepLinkRoute(onKeyRestored?: () => void): DeepLinkState {
             });
     }, [onKeyRestored]);
 
-    const clearPublicTag = () => {
+    const clearPublicTag = useCallback(() => {
         setPublicTagCode(null);
         if (
             typeof window !== "undefined" &&
@@ -47,7 +62,7 @@ export function useDeepLinkRoute(onKeyRestored?: () => void): DeepLinkState {
         ) {
             window.history.pushState({}, "", "/");
         }
-    };
+    }, []);
 
     return { publicTagCode, restoredNotice, clearPublicTag };
 }
