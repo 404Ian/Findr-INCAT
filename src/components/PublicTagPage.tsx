@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import {
     AlertOctagon,
     ArrowLeft,
     CheckCircle2,
+    Clock,
     ExternalLink,
     Flag,
     Lock,
@@ -22,8 +24,17 @@ import {
     type CampusHubName,
 } from "../data/hubs";
 import { api, ApiError } from "../lib/api";
+import { SPRING_SNAPPY, fadeInUpVariants } from "../lib/motion";
 import type { ContactMethod, PublicTagView } from "../types";
-import CategoryArt from "./CategoryArt";
+import CategoryArt, { formatCategoryLabel } from "./CategoryArt";
+import {
+    Button,
+    Card,
+    Input,
+    Select,
+    Skeleton,
+    Textarea,
+} from "./ui/primitives";
 
 export interface PublicTagPageProps {
     publicCode: string;
@@ -81,7 +92,10 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
     const cleanCode = publicCode.trim().toUpperCase();
     const [tag, setTag] = useState<PublicTagView | null>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [errorState, setErrorState] = useState<{
+        kind: "not_found" | "rate_limited" | "generic";
+        message: string;
+    } | null>(null);
 
     const [revealedMethods, setRevealedMethods] = useState<
         ContactMethod[] | null
@@ -109,7 +123,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
-        setError(null);
+        setErrorState(null);
         setRevealedMethods(null);
         setMsgSent(false);
 
@@ -123,11 +137,37 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             })
             .catch((err: unknown) => {
                 if (cancelled) return;
-                setError(
-                    err instanceof ApiError
-                        ? err.message
-                        : "Could not load this QR tag. Check the code and try again.",
-                );
+                if (err instanceof ApiError) {
+                    if (
+                        err.status === 429 ||
+                        err.code.toLowerCase().includes("rate")
+                    ) {
+                        setErrorState({
+                            kind: "rate_limited",
+                            message:
+                                err.message ||
+                                "Too many scan requests right now. Please wait a minute and refresh.",
+                        });
+                        return;
+                    }
+                    if (err.status === 404) {
+                        setErrorState({
+                            kind: "not_found",
+                            message: `No registered Findr INCAT tag matches code #${cleanCode}.`,
+                        });
+                        return;
+                    }
+                    setErrorState({
+                        kind: "generic",
+                        message: err.message,
+                    });
+                    return;
+                }
+                setErrorState({
+                    kind: "not_found",
+                    message:
+                        "Could not load this QR tag. Check the code printed on the sticker and try again.",
+                });
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -206,11 +246,17 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             setMsgSent(true);
             setMessageBody("");
         } catch (err: unknown) {
-            setMsgError(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to send message. Please try again.",
-            );
+            if (err instanceof ApiError && err.status === 429) {
+                setMsgError(
+                    "Slow down a bit—too many messages sent recently. Please wait a moment.",
+                );
+            } else {
+                setMsgError(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to send message. Please try again.",
+                );
+            }
         } finally {
             setSendingMsg(false);
         }
@@ -235,217 +281,306 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
         ? CAMPUS_HUBS.find((h) => h.name === tag.dropOffHub)
         : undefined;
 
+    /* ------------------------------------------------------------------------
+     * 1. LOADING STATE
+     * --------------------------------------------------------------------- */
     if (loading) {
         return (
-            <div className="mx-auto max-w-lg space-y-4 p-4">
-                <div className="h-44 animate-pulse rounded-2xl bg-neutral-900" />
-                <div className="h-32 animate-pulse rounded-2xl bg-neutral-900" />
-                <div className="h-56 animate-pulse rounded-2xl bg-neutral-900" />
+            <div className="mx-auto max-w-lg space-y-4 py-2">
+                <div className="flex items-center justify-between">
+                    <Skeleton className="h-9 w-28" />
+                    <Skeleton className="h-7 w-24 rounded-full" />
+                </div>
+                <Skeleton className="h-48 w-full rounded-3xl" />
+                <Skeleton className="h-32 w-full rounded-2xl" />
+                <Skeleton className="h-64 w-full rounded-2xl" />
             </div>
         );
     }
 
-    if (error || !tag) {
+    /* ------------------------------------------------------------------------
+     * 2. RATE-LIMITED STATE
+     * --------------------------------------------------------------------- */
+    if (errorState?.kind === "rate_limited") {
         return (
-            <div className="mx-auto max-w-md rounded-2xl border border-neutral-800 bg-neutral-950 p-6 text-center">
-                <AlertOctagon className="mx-auto h-10 w-10 text-rose-400" />
-                <h2 className="mt-3 text-base font-bold text-neutral-100">
+            <Card className="mx-auto max-w-md p-6 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-found-bg text-found">
+                    <Clock className="h-6 w-6" />
+                </div>
+                <h2 className="font-display mt-3 text-lg font-bold text-text">
+                    Taking a Quick Breather
+                </h2>
+                <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                    {errorState.message}
+                </p>
+                <p className="mt-2 text-[11px] text-muted">
+                    If you found this item on campus, you can also leave it
+                    directly at the <strong>INCAT Guard House</strong> or{" "}
+                    <strong>Guidance Office</strong>.
+                </p>
+                {onBack && (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={onBack}
+                        leftIcon={<ArrowLeft className="h-4 w-4" />}
+                        className="mt-4"
+                    >
+                        Back
+                    </Button>
+                )}
+            </Card>
+        );
+    }
+
+    /* ------------------------------------------------------------------------
+     * 3. NOT-FOUND / ERROR STATE
+     * --------------------------------------------------------------------- */
+    if (errorState || !tag) {
+        return (
+            <Card className="mx-auto max-w-md p-6 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-lost-bg text-lost">
+                    <AlertOctagon className="h-6 w-6" />
+                </div>
+                <h2 className="font-display mt-3 text-lg font-bold text-text">
                     QR Tag Not Found
                 </h2>
-                <p className="mt-1 text-xs text-neutral-400">
-                    {error ||
+                <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                    {errorState?.message ||
                         `No active Findr INCAT tag matches code #${cleanCode}.`}
                 </p>
                 {onBack && (
-                    <button
-                        type="button"
+                    <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={onBack}
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-100 hover:bg-neutral-700"
+                        leftIcon={<ArrowLeft className="h-4 w-4" />}
+                        className="mt-4"
                     >
-                        <ArrowLeft className="h-4 w-4" />
-                        <span>Back</span>
-                    </button>
+                        Back to Scanner
+                    </Button>
                 )}
-            </div>
+            </Card>
         );
     }
 
+    /* ------------------------------------------------------------------------
+     * 4. REVOKED / DEACTIVATED STATE
+     * --------------------------------------------------------------------- */
     if (tag.isRevoked) {
         return (
-            <div className="mx-auto max-w-md rounded-2xl border border-amber-500/40 bg-neutral-950 p-6 text-center">
-                <ShieldAlert className="mx-auto h-10 w-10 text-amber-400" />
-                <h2 className="mt-3 text-base font-bold text-neutral-100">
-                    This QR Tag Has Been Deactivated
+            <Card className="mx-auto max-w-md border-found-border p-6 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-found-bg text-found">
+                    <ShieldAlert className="h-6 w-6" />
+                </div>
+                <h2 className="font-display mt-3 text-lg font-bold text-text">
+                    This QR Tag Was Replaced or Deactivated
                 </h2>
-                <p className="mt-1 text-xs text-neutral-400">
-                    The owner has revoked or replaced tag{" "}
-                    <strong>#{tag.publicCode}</strong>. If you found this item
-                    at INCAT, please turn it in at the{" "}
+                <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                    The owner has deactivated sticker{" "}
+                    <strong className="font-mono text-text">
+                        #{tag.publicCode}
+                    </strong>
+                    . If you found this item at INCAT, please turn it in at the{" "}
                     <strong>Guard House</strong> or{" "}
                     <strong>Guidance Office</strong>.
                 </p>
                 {onBack && (
-                    <button
-                        type="button"
+                    <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={onBack}
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-100"
+                        leftIcon={<ArrowLeft className="h-4 w-4" />}
+                        className="mt-4"
                     >
-                        <ArrowLeft className="h-4 w-4" />
-                        <span>Back</span>
-                    </button>
+                        Back
+                    </Button>
                 )}
-            </div>
+            </Card>
         );
     }
 
+    /* ------------------------------------------------------------------------
+     * 5. ACTIVE FINDER RECOVERY PAGE
+     * --------------------------------------------------------------------- */
     return (
-        <div className="mx-auto max-w-lg space-y-4 pb-10">
-            <div className="flex items-center justify-between">
+        <motion.div
+            variants={fadeInUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mx-auto max-w-lg space-y-4 pb-12"
+        >
+            {/* Trust & Brand Top Bar */}
+            <div className="flex items-center justify-between gap-2">
                 {onBack ? (
-                    <button
-                        type="button"
+                    <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={onBack}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+                        leftIcon={<ArrowLeft className="h-3.5 w-3.5" />}
                     >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        <span>Back</span>
-                    </button>
+                        Back
+                    </Button>
                 ) : (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                        <ShieldCheck className="h-4 w-4" />
-                        Findr INCAT &middot; Official QR Recovery
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <div className="font-display flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-fg shadow-sm">
+                            F
+                        </div>
+                        <div>
+                            <div className="font-display text-xs font-bold text-text">
+                                Findr INCAT
+                            </div>
+                            <div className="text-[10px] text-muted">
+                                Campus Lost &amp; Found Recovery
+                            </div>
+                        </div>
+                    </div>
                 )}
 
-                <span className="rounded-full border border-neutral-800 bg-neutral-900 px-2.5 py-1 font-mono text-[11px] text-neutral-300">
+                <span className="rounded-full border border-border bg-surface px-3 py-1 font-mono text-xs font-bold text-accent shadow-sm">
                     #{tag.publicCode}
                 </span>
             </div>
 
-            {tag.lostMode && (
-                <div className="rounded-2xl border border-rose-500/60 bg-rose-950/35 p-4 shadow-lg">
-                    <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-rose-300 uppercase">
-                        <span className="h-2.5 w-2.5 animate-ping rounded-full bg-rose-400" />
-                        <span>
-                            Someone lost this item.
-                        </span>
-                    </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-rose-100">
-                        {tag.lostNote ||
-                            "The owner marked this item as actively missing on campus and has been alerted that you scanned this tag."}
-                    </p>
+            {previewMode && (
+                <div className="rounded-xl border border-info/30 bg-info-bg px-3.5 py-2 text-center text-xs font-medium text-info">
+                    Finder Preview Mode — This is what someone sees when they
+                    scan your sticker.
                 </div>
             )}
 
-            <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-xl">
-                <div className="bg-linear-to-br from-emerald-950/70 via-neutral-950 to-neutral-950 p-5">
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+            {/* Calm, Stronger Banner When Lost Mode Is Active */}
+            {tag.lostMode && (
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={SPRING_SNAPPY}
+                    className="rounded-2xl border border-lost-border bg-lost-bg p-4 shadow-sm"
+                >
+                    <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-lost uppercase">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-lost" />
+                        <span>Actively Missing on Campus</span>
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-text">
+                        {tag.lostNote ||
+                            "The owner marked this item as missing at INCAT and has been notified that their tag was scanned."}
+                    </p>
+                </motion.div>
+            )}
+
+            {/* Friendly "You found something!" Hero Card */}
+            <Card elevation="md" className="overflow-hidden">
+                <div className="p-5 sm:p-6">
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-3 py-1 text-xs font-semibold text-accent">
                         <Sparkles className="h-3.5 w-3.5" />
-                        <span>
-                            You found something, we've notified the owner about the scan. 
-                        </span>
+                        <span>You found something!</span>
                     </div>
 
-                    <div className="mt-4 flex items-center gap-4">
+                    <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
                         {tag.photoUrl ? (
                             <img
                                 src={tag.photoUrl}
                                 alt={tag.label}
-                                className="h-20 w-20 shrink-0 rounded-2xl border border-neutral-700 object-cover"
+                                width={96}
+                                height={96}
+                                loading="eager"
+                                decoding="async"
+                                className="h-24 w-24 shrink-0 rounded-2xl border border-border object-cover shadow-sm"
                             />
                         ) : (
-                            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900">
+                            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-border bg-subtle">
                                 <CategoryArt
                                     category={tag.itemType}
-                                    className="h-10 w-10 text-emerald-400"
+                                    className="h-10 w-10 text-accent"
                                 />
                             </div>
                         )}
 
-                        <div>
-                            <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">
-                                Registered Campus Item
+                        <div className="min-w-0 flex-1">
+                            <span className="text-[11px] font-semibold tracking-wider text-muted uppercase">
+                                {formatCategoryLabel(tag.itemType)}
                             </span>
-                            <h1 className="mt-0.5 text-lg font-bold text-neutral-100 sm:text-xl">
+                            <h1 className="font-display mt-0.5 text-xl font-bold text-text sm:text-2xl">
                                 {tag.label}
                             </h1>
-                            <p className="mt-1 text-xs text-neutral-400">
-                                Thank you for scanning! Use the options below to
-                                return this item to its owner at INCAT. No login
-                                or app required.
+                            <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                                Thank you for scanning! Findr INCAT helps return
+                                campus belongings safely with{" "}
+                                <strong>no login or app install needed</strong>.
                             </p>
                         </div>
                     </div>
                 </div>
 
+                {/* Suggested Drop-off Hub */}
                 {tag.dropOffHub && (
-                    <div className="border-t border-neutral-800/90 bg-neutral-900/50 px-5 py-3.5">
+                    <div className="border-t border-border bg-subtle/60 px-5 py-3.5">
                         <div className="flex items-start gap-3">
-                            <div className="mt-0.5 rounded-lg bg-emerald-500/15 p-2 text-emerald-400">
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
                                 <MapPin className="h-4 w-4" />
                             </div>
                             <div className="text-xs">
-                                <div className="font-semibold text-neutral-200">
-                                    Preferred INCAT Drop-Off:{" "}
-                                    <span className="text-emerald-300">
+                                <div className="font-semibold text-text">
+                                    Suggested INCAT Drop-Off:{" "}
+                                    <span className="text-accent">
                                         {tag.dropOffHub}
                                     </span>
                                     {suggestedHubDetails && (
-                                        <span className="ml-1.5 rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
+                                        <span className="ml-1.5 rounded-md border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-secondary">
                                             {suggestedHubDetails.buildingCode}
                                         </span>
                                     )}
                                 </div>
-                                <p className="mt-0.5 text-neutral-400">
+                                <p className="mt-0.5 text-muted">
                                     {suggestedHubDetails?.description ||
-                                        "You can leave the item here and let the owner know below."}
+                                        "You can leave the item here and send a quick note below."}
                                 </p>
                             </div>
                         </div>
                     </div>
                 )}
-            </div>
+            </Card>
 
+            {/* Large One-Tap Contact Buttons */}
             {tag.visibleMethodsCount > 0 && (
-                <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+                <Card className="p-5">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h2 className="text-sm font-bold text-neutral-100">
+                            <h2 className="font-display text-base font-bold text-text">
                                 One-Tap Owner Contact
                             </h2>
-                            <p className="text-xs text-neutral-400">
+                            <p className="text-xs text-muted">
                                 The owner enabled {tag.visibleMethodsCount}{" "}
                                 direct contact{" "}
                                 {tag.visibleMethodsCount === 1
-                                    ? "channel"
-                                    : "channels"}
+                                    ? "option"
+                                    : "options"}
                                 .
                             </p>
                         </div>
-                        <Lock className="h-4 w-4 text-emerald-400" />
+                        <Lock className="h-4 w-4 text-accent" />
                     </div>
 
                     {!revealedMethods ? (
                         <div className="mt-3.5">
-                            <button
-                                type="button"
+                            <Button
+                                variant="secondary"
+                                size="lg"
+                                loading={revealing}
                                 onClick={handleRevealContacts}
-                                disabled={revealing}
-                                className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-600/20 px-4 py-3 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-600/30 disabled:opacity-50"
+                                leftIcon={
+                                    <ShieldCheck className="h-4 w-4 text-accent" />
+                                }
+                                className="w-full border-accent/40 bg-accent-soft text-accent hover:bg-accent hover:text-accent-fg"
                             >
-                                <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                                <span>
-                                    {revealing
-                                        ? "Verifying human check..."
-                                        : "Tap to Reveal Owner Contact Buttons"}
-                                </span>
-                            </button>
-                            <p className="mt-1.5 text-center text-[11px] text-neutral-500">
+                                Tap to Reveal Owner Contact Buttons
+                            </Button>
+                            <p className="mt-1.5 text-center text-[11px] text-muted">
                                 Protected by anti-scraper verification to keep
-                                student numbers safe.
+                                student phone numbers safe.
                             </p>
                             {revealError && (
-                                <p className="mt-2 text-center text-xs text-rose-400">
+                                <p className="mt-2 text-center text-xs text-danger">
                                     {revealError}
                                 </p>
                             )}
@@ -468,156 +603,139 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                                                 : "_blank"
                                         }
                                         rel="noopener noreferrer"
-                                        className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-4 py-3 text-xs font-semibold text-emerald-100 transition-colors hover:bg-emerald-900/40"
+                                        className="flex min-h-12 items-center justify-between rounded-xl border border-accent/35 bg-accent-soft px-4 py-3 text-xs font-semibold text-text transition-colors hover:bg-accent hover:text-accent-fg"
                                     >
-                                        <span className="flex items-center gap-2">
+                                        <span className="flex items-center gap-2.5">
                                             {method.kind === "phone" ? (
-                                                <Phone className="h-4 w-4 text-emerald-400" />
+                                                <Phone className="h-4 w-4 shrink-0" />
                                             ) : method.kind === "email" ? (
-                                                <Mail className="h-4 w-4 text-emerald-400" />
+                                                <Mail className="h-4 w-4 shrink-0" />
                                             ) : (
-                                                <MessageCircle className="h-4 w-4 text-emerald-400" />
+                                                <MessageCircle className="h-4 w-4 shrink-0" />
                                             )}
                                             <span className="uppercase">
                                                 {method.kind}
                                             </span>
-                                            <span className="font-normal text-neutral-300">
-                                                ({method.value})
+                                            <span className="truncate font-mono font-normal opacity-85">
+                                                {method.value}
                                             </span>
                                         </span>
-                                        <ExternalLink className="h-3.5 w-3.5 text-emerald-400" />
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                                     </a>
                                 );
                             })}
                         </div>
                     )}
-                </div>
+                </Card>
             )}
 
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
-                <h2 className="text-sm font-bold text-neutral-100">
-                    Message the Owner Directly
+            {/* Relay Message Form with Clear Success State */}
+            <Card className="p-5">
+                <h2 className="font-display text-base font-bold text-text">
+                    Send a Quick Note to the Owner
                 </h2>
-                <p className="mt-0.5 text-xs text-neutral-400">
-                    Delivered instantly to the owner&apos;s{" "}
-                    <strong>My items</strong> inbox without exposing either
-                    person&apos;s private number.
+                <p className="mt-0.5 text-xs text-muted">
+                    Delivered straight to the owner&apos;s{" "}
+                    <strong>My items</strong> inbox without revealing your
+                    personal phone number.
                 </p>
 
                 {msgSent ? (
-                    <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-950/25 p-4 text-center">
-                        <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-400" />
-                        <h3 className="mt-2 text-sm font-bold text-emerald-200">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={SPRING_SNAPPY}
+                        className="mt-4 rounded-2xl border border-accent/35 bg-accent-soft p-5 text-center"
+                    >
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-sm">
+                            <CheckCircle2 className="h-6 w-6" />
+                        </div>
+                        <h3 className="font-display mt-3 text-base font-bold text-text">
                             Message Sent to Owner!
                         </h3>
-                        <p className="mt-1 text-xs text-neutral-300">
-                            Thank you for helping keep INCAT honest and
-                            connected.
+                        <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                            Thank you for helping return this item at INCAT. If
+                            you left it at a drop-off hub, the owner now has
+                            your update.
                         </p>
-                        <button
-                            type="button"
+                        <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => setMsgSent(false)}
-                            className="mt-3 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-800"
+                            className="mt-4"
                         >
                             Send another update
-                        </button>
-                    </div>
+                        </Button>
+                    </motion.div>
                 ) : (
                     <form
                         onSubmit={handleSendMessage}
-                        className="mt-4 space-y-3.5"
+                        className="mt-4 space-y-4"
                     >
                         {msgError && (
-                            <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-xs text-rose-200">
+                            <div className="rounded-xl border border-danger/40 bg-danger-bg p-3 text-xs font-medium text-danger">
                                 {msgError}
                             </div>
                         )}
 
-                        <div>
-                            <label
-                                htmlFor="finder-found-hub"
-                                className="mb-1 block text-xs font-medium text-neutral-300"
-                            >
-                                Where is the item right now?
-                            </label>
-                            <select
-                                id="finder-found-hub"
-                                value={foundAtHub}
-                                onChange={(e) =>
-                                    setFoundAtHub(
-                                        e.target.value as CampusHubName | "",
-                                    )
-                                }
-                                className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-100 focus:border-emerald-500 focus:outline-none"
-                            >
-                                <option value="">
-                                    I still have it with me / Other spot
+                        <Select
+                            id="finder-found-hub"
+                            label="Where is the item right now?"
+                            value={foundAtHub}
+                            onChange={(e) =>
+                                setFoundAtHub(
+                                    e.target.value as CampusHubName | "",
+                                )
+                            }
+                        >
+                            <option value="">
+                                I still have it with me / Another spot
+                            </option>
+                            {CAMPUS_HUB_NAMES.map((hub) => (
+                                <option key={hub} value={hub}>
+                                    Turned in / Spotted at: {hub}
                                 </option>
-                                {CAMPUS_HUB_NAMES.map((hub) => (
-                                    <option key={hub} value={hub}>
-                                        Turned in / Spotted at: {hub}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                            ))}
+                        </Select>
 
-                        <div>
-                            <label
-                                htmlFor="finder-message-body"
-                                className="mb-1 block text-xs font-medium text-neutral-300"
-                            >
-                                Your Message *
-                            </label>
-                            <textarea
-                                id="finder-message-body"
-                                rows={3}
-                                required
-                                maxLength={800}
-                                value={messageBody}
-                                onChange={(e) => setMessageBody(e.target.value)}
-                                placeholder="e.g., I found your tumbler near the Covered Court bleachers and left it with the guard on duty at Gate 1."
-                                className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                            />
-                        </div>
+                        <Textarea
+                            id="finder-message-body"
+                            label="Your Message *"
+                            rows={3}
+                            required
+                            maxLength={800}
+                            value={messageBody}
+                            onChange={(e) => setMessageBody(e.target.value)}
+                            placeholder="e.g., I found your tumbler near the Covered Court bleachers and left it with the guard on duty at Gate 1."
+                        />
 
-                        <div>
-                            <label
-                                htmlFor="finder-contact-input"
-                                className="mb-1 block text-xs font-medium text-neutral-300"
-                            >
-                                How can the owner reach you back? (Optional)
-                            </label>
-                            <input
-                                id="finder-contact-input"
-                                type="text"
-                                maxLength={120}
-                                value={finderContact}
-                                onChange={(e) =>
-                                    setFinderContact(e.target.value)
-                                }
-                                placeholder="e.g., Messenger @name, 0917..., or Grade 11 ICT-A room"
-                                className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                            />
-                        </div>
+                        <Input
+                            id="finder-contact-input"
+                            label="How can the owner reach you back? (Optional)"
+                            maxLength={120}
+                            value={finderContact}
+                            onChange={(e) => setFinderContact(e.target.value)}
+                            placeholder="e.g., Messenger @name, 0917..., or Grade 11 ICT-A room"
+                        />
 
-                        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 p-3 text-xs">
+                        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-subtle/50 p-3.5 text-xs">
                             <input
                                 type="checkbox"
                                 checked={shareApproxLocation}
                                 onChange={(e) =>
                                     handleToggleShareLocation(e.target.checked)
                                 }
-                                className="mt-0.5 h-4 w-4 rounded border-neutral-600 text-emerald-600 focus:ring-emerald-500"
+                                className="mt-0.5 h-4 w-4 rounded border-border-strong accent-accent"
                             />
                             <div className="space-y-0.5">
-                                <div className="flex items-center gap-1.5 font-medium text-neutral-200">
-                                    <Navigation className="h-3.5 w-3.5 text-emerald-400" />
+                                <div className="flex items-center gap-1.5 font-semibold text-text">
+                                    <Navigation className="h-3.5 w-3.5 text-accent" />
                                     <span>
-                                        Share my approximate GPS spot once with
-                                        the owner (Optional)
+                                        Share my approximate GPS spot once
+                                        (Optional)
                                     </span>
                                 </div>
-                                <p className="text-[11px] text-neutral-400">
+                                <p className="text-[11px] text-muted">
                                     {locatingGps
                                         ? "Reading GPS coordinates..."
                                         : approxCoords
@@ -627,30 +745,28 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                             </div>
                         </label>
 
-                        <button
+                        <Button
                             type="submit"
-                            disabled={sendingMsg || !messageBody.trim()}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                            variant="primary"
+                            size="lg"
+                            loading={sendingMsg}
+                            disabled={!messageBody.trim()}
+                            leftIcon={<Send className="h-4 w-4" />}
+                            className="w-full"
                         >
-                            <Send className="h-4 w-4" />
-                            <span>
-                                {sendingMsg
-                                    ? "Sending Message..."
-                                    : "Send Message to Owner"}
-                            </span>
-                        </button>
+                            Send Message to Owner
+                        </Button>
                     </form>
                 )}
-            </div>
+            </Card>
 
-            <div className="flex items-center justify-between px-1 text-xs text-neutral-500">
-                <span>
-                    Powered by Findr INCAT
-                </span>
+            {/* Footer Trust Line & Report */}
+            <div className="flex items-center justify-between px-1 text-xs text-muted">
+                <span>Findr INCAT &middot; Zero-account campus recovery</span>
                 <button
                     type="button"
                     onClick={() => setReportOpen((prev) => !prev)}
-                    className="inline-flex items-center gap-1 text-neutral-400 hover:text-rose-400"
+                    className="inline-flex items-center gap-1 text-muted hover:text-danger cursor-pointer"
                 >
                     <Flag className="h-3.5 w-3.5" />
                     <span>Report tag</span>
@@ -658,16 +774,16 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             </div>
 
             {reportOpen && (
-                <form
-                    onSubmit={handleReportSubmit}
-                    className="rounded-xl border border-neutral-800 bg-neutral-950 p-3.5 text-xs"
-                >
+                <Card className="p-3.5 text-xs">
                     {reportSubmitted ? (
-                        <p className="text-emerald-400">
+                        <p className="font-medium text-accent">
                             Report submitted to INCAT moderators. Thank you.
                         </p>
                     ) : (
-                        <div className="flex items-center gap-2">
+                        <form
+                            onSubmit={handleReportSubmit}
+                            className="flex items-center gap-2"
+                        >
                             <input
                                 type="text"
                                 required
@@ -676,19 +792,17 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                                     setReportReason(e.target.value)
                                 }
                                 placeholder="Reason for reporting this tag..."
-                                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100"
+                                aria-label="Reason for reporting this tag"
+                                className="min-h-10 w-full rounded-xl border border-border bg-subtle px-3 py-1.5 text-xs text-text focus:border-accent focus:outline-none"
                             />
-                            <button
-                                type="submit"
-                                className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white hover:bg-rose-500"
-                            >
+                            <Button type="submit" variant="danger" size="sm">
                                 Submit
-                            </button>
-                        </div>
+                            </Button>
+                        </form>
                     )}
-                </form>
+                </Card>
             )}
-        </div>
+        </motion.div>
     );
 };
 
