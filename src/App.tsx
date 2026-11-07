@@ -561,6 +561,11 @@ function FindrShell() {
                                         }}
                                         exit={{ opacity: 0, height: 0 }}
                                         transition={SPRING_GENTLE}
+                                        onAnimationComplete={() => {
+                                            window.dispatchEvent(
+                                                new Event("resize"),
+                                            );
+                                        }}
                                         className="overflow-hidden"
                                     >
                                         <div className="space-y-2 pb-2">
@@ -576,7 +581,7 @@ function FindrShell() {
                                             </div>
                                             <Suspense
                                                 fallback={
-                                                    <Skeleton className="h-115 w-full rounded-2xl" />
+                                                    <Skeleton className="h-90 min-h-90 w-full rounded-2xl sm:h-120 sm:min-h-120" />
                                                 }
                                             >
                                                 <LazyCampusMap

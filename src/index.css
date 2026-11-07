@@ -388,6 +388,25 @@
     visibility: hidden !important;
 }
 
+.leaflet-container {
+    width: 100%;
+    background-color: var(--subtle) !important;
+    font-family: var(--font-sans) !important;
+}
+
+.dark .leaflet-container,
+[data-theme="dark"] .leaflet-container {
+    background-color: #161816 !important;
+}
+
+.dark .leaflet-tile-pane,
+[data-theme="dark"] .leaflet-tile-pane,
+.osm-raster-dark .leaflet-tile-pane,
+.incat-osm-dark-raster .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
+        saturate(0.5);
+}
+
 @media print {
     @page {
         size: A4 portrait;

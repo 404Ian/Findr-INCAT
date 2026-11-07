@@ -9,13 +9,24 @@ OR IGNORE INTO locations (
     description
 )
 VALUES
+    INSERT
+    OR REPLACE INTO locations (
+        id,
+        name,
+        building_code,
+        is_drop_off_hub,
+        lat,
+        lng,
+        description
+    )
+VALUES
     (
         'loc-guard-house',
         'Guard House',
         'GATE-1',
         1,
-        18.1961,
-        120.5923,
+        18.20339,
+        120.59228,
         'Main gate security post along P. Gomez St. Open 24/7 for item drop-off.'
     ),
     (
@@ -23,8 +34,8 @@ VALUES
         'Guidance Office',
         'ADMIN-1F',
         1,
-        18.1965,
-        120.5926,
+        18.20379,
+        120.59258,
         'Ground floor, Administration Building. Official safekeeping for IDs and valuables.'
     ),
     (
@@ -32,8 +43,8 @@ VALUES
         'SSG / Student Affairs Office',
         'OSA-1F',
         1,
-        18.1967,
-        120.5925,
+        18.20399,
+        120.59248,
         'Supreme Student Government office near the student quadrangle.'
     ),
     (
@@ -41,8 +52,8 @@ VALUES
         'ICT / Computer Lab',
         'ICT-2F',
         1,
-        18.1969,
-        120.5929,
+        18.20419,
+        120.59288,
         '2nd floor ICT Building. Check with the lab technician for flash drives and gadgets.'
     ),
     (
@@ -50,8 +61,8 @@ VALUES
         'Electronics & Electrical Lab',
         'TECH-A',
         1,
-        18.1971,
-        120.5924,
+        18.20439,
+        120.59238,
         'Trade & Tech Building A. Multimeters, calculators, and lab tools.'
     ),
     (
@@ -59,8 +70,8 @@ VALUES
         'Automotive & Mechanical Shop',
         'SHOP-B',
         1,
-        18.1972,
-        120.5931,
+        18.20449,
+        120.59308,
         'North Workshop Complex.'
     ),
     (
@@ -68,8 +79,8 @@ VALUES
         'Garments & Cosmetology Lab',
         'TVL-1F',
         1,
-        18.1964,
-        120.5930,
+        18.20369,
+        120.59298,
         'TVL Home Economics wing, 1st floor.'
     ),
     (
@@ -77,8 +88,8 @@ VALUES
         'Food Trades / Culinary Lab',
         'TVL-2F',
         1,
-        18.1963,
-        120.5932,
+        18.20359,
+        120.59318,
         'Baking and culinary arts laboratory.'
     ),
     (
@@ -86,8 +97,8 @@ VALUES
         'Drafting & Civil Tech Studio',
         'TECH-C',
         1,
-        18.1970,
-        120.5927,
+        18.20429,
+        120.59268,
         'T-squares, canisters, and engineering calculators.'
     ),
     (
@@ -95,8 +106,8 @@ VALUES
         'Main Library',
         'LIB-2F',
         1,
-        18.1966,
-        120.5928,
+        18.20389,
+        120.59278,
         'Circulation desk holds notebooks, books, and umbrellas left at tables.'
     ),
     (
@@ -104,8 +115,8 @@ VALUES
         'School Canteen',
         'CANT',
         0,
-        18.1962,
-        120.5927,
+        18.20349,
+        120.59268,
         'Main student dining area.'
     ),
     (
@@ -113,8 +124,8 @@ VALUES
         'Covered Court / Gymnasium',
         'GYM',
         0,
-        18.1968,
-        120.5922,
+        18.20409,
+        120.59218,
         'Campus covered court and bleachers.'
     );
 

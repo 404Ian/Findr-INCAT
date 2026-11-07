@@ -15,16 +15,18 @@ import {
     X,
 } from "lucide-react";
 import {
+    CAMPUS_BOUNDS,
+    CAMPUS_CENTER,
+    CAMPUS_DEFAULT_ZOOM,
     CAMPUS_HUBS,
+    CAMPUS_MAX_BOUNDS_VISCOSITY,
+    CAMPUS_MAX_ZOOM,
+    CAMPUS_MIN_ZOOM,
     HUB_SNAP_RADIUS_METERS,
-    INCAT_CENTER,
-    INCAT_DEFAULT_ZOOM,
-    INCAT_MAX_BOUNDS,
-    INCAT_MAX_ZOOM,
-    INCAT_MIN_ZOOM,
     INCAT_PICKER_ZOOM,
     findNearestCampusHub,
     haversineMeters,
+    isWithinCampusBounds,
 } from "../lib/campus";
 import { SPRING_SHEET } from "../lib/motion";
 import { useThemeAndI18n } from "../lib/themeAndI18n";
@@ -87,21 +89,29 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     pickedCoords = null,
     onPickCoords,
     className = "",
-    heightClassName = "h-[460px]",
+    heightClassName = "h-[360px] min-h-[360px] sm:h-[480px] sm:min-h-[480px]",
 }) => {
     const { theme } = useThemeAndI18n();
+    const mapWrapperRef = useRef<HTMLDivElement | null>(null);
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
     const markersLayerRef = useRef<L.LayerGroup | null>(null);
     const hubsLayerRef = useRef<L.LayerGroup | null>(null);
     const pickerMarkerRef = useRef<L.Marker | null>(null);
     const userLocationMarkerRef = useRef<L.CircleMarker | null>(null);
+    const toastTimeoutRef = useRef<number | null>(null);
 
     const allPosts = useMemo(() => posts ?? items ?? [], [posts, items]);
-    const allHubs: readonly CampusLocation[] = useMemo(
-        () => (locations && locations.length > 0 ? locations : CAMPUS_HUBS),
-        [locations],
-    );
+    const allHubs: readonly CampusLocation[] = useMemo(() => {
+        if (
+            locations &&
+            locations.length > 0 &&
+            locations.every((loc) => isWithinCampusBounds(loc.lat, loc.lng))
+        ) {
+            return locations;
+        }
+        return CAMPUS_HUBS;
+    }, [locations]);
 
     const [activeCluster, setActiveCluster] = useState<ClusteredGroup | null>(
         null,
@@ -109,15 +119,45 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     const [activePostIndex, setActivePostIndex] = useState(0);
     const [showHubLabels, setShowHubLabels] = useState(true);
     const [locatingUser, setLocatingUser] = useState(false);
-    const [geoError, setGeoError] = useState<string | null>(null);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [snappedHubName, setSnappedHubName] = useState<string | null>(null);
+
+    const showMapToast = React.useCallback((msg: string) => {
+        if (toastTimeoutRef.current !== null) {
+            window.clearTimeout(toastTimeoutRef.current);
+        }
+        setToastMessage(msg);
+        toastTimeoutRef.current = window.setTimeout(() => {
+            setToastMessage(null);
+            toastTimeoutRef.current = null;
+        }, 4000);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (toastTimeoutRef.current !== null) {
+                window.clearTimeout(toastTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Group posts that share the same or very close coordinates (~12 meters)
     const clusteredGroups = useMemo<ClusteredGroup[]>(() => {
         const groups: ClusteredGroup[] = [];
         for (const post of allPosts) {
-            const lat = Number(post.lat) || INCAT_CENTER.lat;
-            const lng = Number(post.lng) || INCAT_CENTER.lng;
+            const matchingHub = allHubs.find((h) => h.id === post.locationId);
+            const rawLat = Number(post.lat);
+            const rawLng = Number(post.lng);
+            const validInBounds =
+                Number.isFinite(rawLat) &&
+                Number.isFinite(rawLng) &&
+                isWithinCampusBounds(rawLat, rawLng);
+            const lat = validInBounds
+                ? rawLat
+                : (matchingHub?.lat ?? CAMPUS_CENTER[0]);
+            const lng = validInBounds
+                ? rawLng
+                : (matchingHub?.lng ?? CAMPUS_CENTER[1]);
             const existing = groups.find(
                 (g) => haversineMeters(g.lat, g.lng, lat, lng) < 12,
             );
@@ -133,7 +173,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             }
         }
         return groups;
-    }, [allPosts]);
+    }, [allPosts, allHubs]);
 
     // Sync external selectedPostId from Wall with the map's active cluster preview
     useEffect(() => {
@@ -159,22 +199,28 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         const container = mapContainerRef.current;
         if (!container || mapInstanceRef.current) return;
 
+        const initialZoom = interactivePicker
+            ? INCAT_PICKER_ZOOM
+            : CAMPUS_DEFAULT_ZOOM;
+
         const map = L.map(container, {
-            center: [INCAT_CENTER.lat, INCAT_CENTER.lng],
-            zoom: interactivePicker ? INCAT_PICKER_ZOOM : INCAT_DEFAULT_ZOOM,
-            minZoom: INCAT_MIN_ZOOM,
-            maxZoom: INCAT_MAX_ZOOM,
-            maxBounds: INCAT_MAX_BOUNDS,
-            maxBoundsViscosity: 0.85,
+            center: CAMPUS_CENTER,
+            zoom: initialZoom,
+            minZoom: CAMPUS_MIN_ZOOM,
+            maxZoom: CAMPUS_MAX_ZOOM,
+            maxBounds: CAMPUS_BOUNDS,
+            maxBoundsViscosity: CAMPUS_MAX_BOUNDS_VISCOSITY,
             zoomControl: false,
         });
+
+        map.setView(CAMPUS_CENTER, initialZoom);
 
         L.control.zoom({ position: "bottomright" }).addTo(map);
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution:
-                "&copy; OpenStreetMap contributors &middot; INCAT Laoag City",
-            maxZoom: INCAT_MAX_ZOOM,
+                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: CAMPUS_MAX_ZOOM,
         }).addTo(map);
 
         const hubsLayer = L.layerGroup().addTo(map);
@@ -184,21 +230,35 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         markersLayerRef.current = markersLayer;
         mapInstanceRef.current = map;
 
-        // Ensure accurate sizing after animated collapsible toggle
-        const timer1 = window.setTimeout(() => map.invalidateSize(), 120);
-        const timer2 = window.setTimeout(() => map.invalidateSize(), 360);
+        const invalidate = () => {
+            map.invalidateSize({ pan: false });
+        };
+
+        const rafId = window.requestAnimationFrame(invalidate);
+        const timer1 = window.setTimeout(invalidate, 120);
+        const timer2 = window.setTimeout(invalidate, 360);
+        const timer3 = window.setTimeout(invalidate, 600);
 
         const resizeObserver =
             typeof ResizeObserver !== "undefined"
                 ? new ResizeObserver(() => {
-                      map.invalidateSize({ pan: false });
+                      invalidate();
                   })
                 : null;
+
         resizeObserver?.observe(container);
+        if (mapWrapperRef.current) {
+            resizeObserver?.observe(mapWrapperRef.current);
+        }
+
+        window.addEventListener("resize", invalidate);
 
         return () => {
+            window.cancelAnimationFrame(rafId);
             window.clearTimeout(timer1);
             window.clearTimeout(timer2);
+            window.clearTimeout(timer3);
+            window.removeEventListener("resize", invalidate);
             resizeObserver?.disconnect();
             map.remove();
             mapInstanceRef.current = null;
@@ -217,7 +277,6 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 snapToHub ||
                 (nearest !== null &&
                     nearest.distanceMeters <= HUB_SNAP_RADIUS_METERS);
-
             const finalLat =
                 shouldSnap && snapToHub && nearest
                     ? nearest.hub.lat
@@ -333,8 +392,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     useEffect(() => {
         const hubsLayer = hubsLayerRef.current;
         if (!hubsLayer) return;
-        hubsLayer.clearLayers();
 
+        hubsLayer.clearLayers();
         if (!showHubLabels) return;
 
         for (const hub of allHubs) {
@@ -402,8 +461,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     useEffect(() => {
         const markersLayer = markersLayerRef.current;
         if (!markersLayer) return;
-        markersLayer.clearLayers();
 
+        markersLayer.clearLayers();
         if (interactivePicker) return;
 
         for (const cluster of clusteredGroups) {
@@ -420,7 +479,6 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 (p) => p.type === "found" && p.status !== "returned",
             );
 
-            // Semantic status colors matching 4A tokens
             let bg = "#4b6356"; // Returned muted green/gray
             let ring = "rgba(75,99,86,0.35)";
             if (hasLost) {
@@ -495,18 +553,16 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     ]);
 
     const handleResetIncatCenter = () => {
-        setGeoError(null);
-        mapInstanceRef.current?.flyTo(
-            [INCAT_CENTER.lat, INCAT_CENTER.lng],
-            interactivePicker ? INCAT_PICKER_ZOOM : INCAT_DEFAULT_ZOOM,
-            { duration: 0.65 },
-        );
+        setToastMessage(null);
+        mapInstanceRef.current?.setView(CAMPUS_CENTER, CAMPUS_DEFAULT_ZOOM, {
+            animate: true,
+        });
     };
 
     const handleLocateMe = () => {
-        setGeoError(null);
+        setToastMessage(null);
         if (!("geolocation" in navigator)) {
-            setGeoError("Geolocation is not supported by your browser.");
+            showMapToast("Geolocation is not supported by your browser.");
             return;
         }
         setLocatingUser(true);
@@ -517,9 +573,15 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 const map = mapInstanceRef.current;
                 if (!map) return;
 
+                if (!isWithinCampusBounds(latitude, longitude)) {
+                    showMapToast("You're not on campus. Showing INCAT.");
+                    return;
+                }
+
                 if (userLocationMarkerRef.current) {
                     userLocationMarkerRef.current.remove();
                 }
+
                 userLocationMarkerRef.current = L.circleMarker(
                     [latitude, longitude],
                     {
@@ -536,36 +598,15 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                     })
                     .addTo(map);
 
-                const distFromCampus = haversineMeters(
-                    latitude,
-                    longitude,
-                    INCAT_CENTER.lat,
-                    INCAT_CENTER.lng,
-                );
-
-                if (distFromCampus > 1200) {
-                    setGeoError(
-                        "You appear to be outside INCAT campus bounds; showing closest campus view.",
-                    );
-                } else {
-                    map.flyTo([latitude, longitude], 18, { duration: 0.75 });
-                }
+                map.flyTo([latitude, longitude], 18, { duration: 0.75 });
 
                 if (interactivePicker) {
                     emitPickedCoordinates(latitude, longitude, false);
                 }
             },
-            (err) => {
+            () => {
                 setLocatingUser(false);
-                if (err.code === err.PERMISSION_DENIED) {
-                    setGeoError(
-                        "Location permission denied. You can still tap any building hub on the map.",
-                    );
-                } else {
-                    setGeoError(
-                        "Could not determine GPS location. Try tapping a campus building instead.",
-                    );
-                }
+                showMapToast("You're not on campus. Showing INCAT.");
             },
             { enableHighAccuracy: true, timeout: 8000 },
         );
@@ -596,76 +637,281 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 
     return (
         <div
-            className={`theme-surface relative overflow-hidden rounded-2xl border border-border bg-surface shadow-md ${
+            className={`theme-surface overflow-hidden rounded-2xl border border-border bg-surface shadow-md ${
                 theme === "dark" ? "incat-osm-dark-raster" : ""
             } ${className}`}
         >
-            {/* Top Floating Map Controls */}
-            <div className="pointer-events-none absolute top-3 right-3 left-3 z-400 flex flex-wrap items-center justify-between gap-2">
-                <div className="pointer-events-auto inline-flex items-center gap-2 rounded-xl border border-border bg-surface/92 px-3 py-1.5 text-xs font-medium text-text shadow-sm backdrop-blur-md">
-                    <Compass className="h-3.5 w-3.5 text-accent" />
-                    <span className="font-semibold">INCAT Campus</span>
-                    {interactivePicker && snappedHubName ? (
-                        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[11px] font-semibold text-accent">
-                            {snappedHubName}
+            {/* Relative Map Wrapper with Explicit Height */}
+            <div
+                ref={mapWrapperRef}
+                className={`relative w-full ${heightClassName}`}
+            >
+                {/* Leaflet Map Canvas */}
+                <div
+                    ref={mapContainerRef}
+                    className={`w-full ${heightClassName} bg-subtle`}
+                    aria-label="INCAT Campus interactive map"
+                />
+
+                {/* Top Overlay Controls (Inside relative wrapper, z-1000) */}
+                <div className="pointer-events-none absolute top-2.5 right-2.5 left-2.5 z-1000 flex flex-wrap items-start justify-between gap-1.5 sm:top-3 sm:right-3 sm:left-3 sm:items-center sm:gap-2">
+                    <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-[11px] font-medium text-text shadow-sm backdrop-blur-md sm:px-3 sm:text-xs">
+                        <Compass className="h-3.5 w-3.5 shrink-0 text-accent" />
+                        <span className="font-semibold">INCAT Campus</span>
+                        {interactivePicker && snappedHubName ? (
+                            <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent sm:text-[11px]">
+                                {snappedHubName}
+                            </span>
+                        ) : (
+                            <span className="hidden text-muted md:inline">
+                                &middot; P. Gomez St., Laoag City
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="pointer-events-auto flex flex-wrap items-center gap-1 sm:gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setShowHubLabels((prev) => !prev)}
+                            className={`inline-flex min-h-8 items-center gap-1 rounded-xl border px-2 py-1 text-[11px] font-semibold shadow-sm backdrop-blur-md transition-colors cursor-pointer sm:min-h-9 sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs ${
+                                showHubLabels
+                                    ? "border-accent bg-accent text-accent-fg"
+                                    : "border-border bg-surface/92 text-text-secondary hover:bg-subtle"
+                            }`}
+                            title="Toggle INCAT building hub badges"
+                        >
+                            <Layers className="h-3.5 w-3.5 shrink-0" />
+                            <span>Hubs</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleLocateMe}
+                            disabled={locatingUser}
+                            className="inline-flex min-h-8 items-center gap-1 rounded-xl border border-border bg-surface/92 px-2 py-1 text-[11px] font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle disabled:opacity-50 cursor-pointer sm:min-h-9 sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
+                            title="Locate me via GPS"
+                        >
+                            <LocateFixed
+                                className={`h-3.5 w-3.5 shrink-0 text-accent ${
+                                    locatingUser ? "animate-spin" : ""
+                                }`}
+                            />
+                            <span>
+                                {locatingUser ? "Locating..." : "Locate me"}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleResetIncatCenter}
+                            className="inline-flex min-h-8 items-center gap-1 rounded-xl border border-border bg-surface/92 px-2 py-1 text-[11px] font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle cursor-pointer sm:min-h-9 sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
+                            title="Reset view to INCAT Campus center"
+                        >
+                            <Navigation className="h-3.5 w-3.5 shrink-0 text-accent" />
+                            <span>Reset view</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Dismissible 4-Second Toast Overlay */}
+                <AnimatePresence>
+                    {toastMessage && (
+                        <motion.div
+                            key="campus-map-toast"
+                            role="status"
+                            aria-live="polite"
+                            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                            transition={SPRING_SHEET}
+                            className="pointer-events-auto absolute top-20 left-1/2 z-1000 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-border-strong bg-surface/95 px-3 py-1.5 text-xs font-semibold text-text shadow-md backdrop-blur-md sm:top-14"
+                        >
+                            <span>{toastMessage}</span>
+                            <button
+                                type="button"
+                                onClick={() => setToastMessage(null)}
+                                aria-label="Dismiss notification"
+                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted hover:bg-subtle hover:text-text cursor-pointer"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Bottom-Left Wrapping Legend Overlay (Inside relative wrapper, z-[1000]) */}
+                <div className="pointer-events-auto absolute bottom-6 left-2.5 z-1000 flex max-w-[calc(100%-3.75rem)] flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-[11px] leading-tight text-text-secondary shadow-sm backdrop-blur-md sm:bottom-3 sm:left-3 sm:max-w-[calc(100%-14rem)]">
+                    {interactivePicker ? (
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                            <MapPin className="h-3 w-3 shrink-0 text-accent" />
+                            <span>
+                                Tap campus, drag pin, or tap a hub badge.
+                            </span>
                         </span>
                     ) : (
-                        <span className="hidden text-muted sm:inline">
-                            &middot; P. Gomez St., Laoag City
-                        </span>
+                        <>
+                            <span className="inline-flex items-center gap-1 font-medium">
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-lost" />
+                                <span>Lost ({lostCount})</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 font-medium">
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-found" />
+                                <span>Found ({foundCount})</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 font-medium">
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-returned" />
+                                <span>Returned ({returnedCount})</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 font-semibold text-accent">
+                                <ShieldCheck className="h-3 w-3 shrink-0" />
+                                <span>Official Drop-off Hubs</span>
+                            </span>
+                        </>
                     )}
                 </div>
 
-                <div className="pointer-events-auto flex items-center gap-1.5">
-                    <button
-                        type="button"
-                        onClick={() => setShowHubLabels((prev) => !prev)}
-                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-md transition-colors cursor-pointer ${
-                            showHubLabels
-                                ? "border-accent bg-accent text-accent-fg"
-                                : "border-border bg-surface/92 text-text-secondary hover:bg-subtle"
-                        }`}
-                        title="Toggle INCAT building hub badges"
-                    >
-                        <Layers className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Hubs</span>
-                    </button>
+                {/* Slide-Up Detail Card (Bottom Sheet on Mobile, Floating Side Panel on Desktop) */}
+                <AnimatePresence>
+                    {!interactivePicker && activePost && activeCluster && (
+                        <motion.div
+                            key={activeCluster.key}
+                            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                            transition={SPRING_SHEET}
+                            className="theme-surface absolute right-3 bottom-16 left-3 z-1000 rounded-2xl border border-border-strong bg-surface/98 p-3.5 shadow-lg backdrop-blur-md sm:right-auto sm:bottom-14 sm:left-3 sm:w-96"
+                        >
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <StatusBadge
+                                        type={activePost.type}
+                                        status={activePost.status}
+                                    />
+                                    <span className="text-[11px] text-muted">
+                                        {formatRelativeTime(
+                                            activePost.createdAt,
+                                        )}
+                                    </span>
+                                    {activeCluster.posts.length > 1 && (
+                                        <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-semibold text-text-secondary">
+                                            {activePostIndex + 1} of{" "}
+                                            {activeCluster.posts.length} here
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveCluster(null)}
+                                    aria-label="Close pin preview"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-text cursor-pointer"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
 
-                    <button
-                        type="button"
-                        onClick={handleLocateMe}
-                        disabled={locatingUser}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-xs font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle disabled:opacity-50 cursor-pointer"
-                        title="Locate me via GPS"
-                    >
-                        <LocateFixed
-                            className={`h-3.5 w-3.5 text-accent ${
-                                locatingUser ? "animate-spin" : ""
-                            }`}
-                        />
-                        <span>
-                            {locatingUser ? "Locating..." : "Locate me"}
-                        </span>
-                    </button>
+                            {/* Thumbnail + Title + Summary */}
+                            <div className="mt-2.5 flex gap-3">
+                                <div className="h-16 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-subtle">
+                                    {activePost.imageUrls.length > 0 ? (
+                                        <img
+                                            src={activePost.imageUrls[0]}
+                                            alt={activePost.title}
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-muted">
+                                            {getCategoryIcon(
+                                                activePost.category,
+                                                24,
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[11px] font-medium text-muted">
+                                        {formatCategoryLabel(
+                                            activePost.category,
+                                        )}
+                                    </div>
+                                    <h4 className="font-display truncate text-sm font-bold text-text">
+                                        {activePost.title}
+                                    </h4>
+                                    <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">
+                                        {activePost.description}
+                                    </p>
+                                </div>
+                            </div>
 
-                    <button
-                        type="button"
-                        onClick={handleResetIncatCenter}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-xs font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle cursor-pointer"
-                        title="Reset view to INCAT Campus center"
-                    >
-                        <Navigation className="h-3.5 w-3.5 text-accent" />
-                        <span>Reset view</span>
-                    </button>
-                </div>
+                            <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs">
+                                <span className="inline-flex items-center gap-1 truncate font-medium text-text-secondary">
+                                    <MapPin className="h-3.5 w-3.5 shrink-0 text-accent" />
+                                    <span className="truncate">
+                                        {activePost.locationName}
+                                    </span>
+                                </span>
+
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                    {activeCluster.posts.length > 1 && (
+                                        <div className="inline-flex items-center rounded-lg border border-border bg-subtle p-0.5">
+                                            <button
+                                                type="button"
+                                                aria-label="Previous item at this location"
+                                                onClick={() =>
+                                                    setActivePostIndex(
+                                                        (prev) =>
+                                                            (prev -
+                                                                1 +
+                                                                activeCluster
+                                                                    .posts
+                                                                    .length) %
+                                                            activeCluster.posts
+                                                                .length,
+                                                    )
+                                                }
+                                                className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
+                                            >
+                                                <ChevronLeft className="h-3.5 w-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                aria-label="Next item at this location"
+                                                onClick={() =>
+                                                    setActivePostIndex(
+                                                        (prev) =>
+                                                            (prev + 1) %
+                                                            activeCluster.posts
+                                                                .length,
+                                                    )
+                                                }
+                                                className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
+                                            >
+                                                <ChevronRight className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    {(onSelectPost || onSelectItem) && (
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() => {
+                                                onSelectPost?.(activePost);
+                                                onSelectItem?.(activePost);
+                                            }}
+                                            rightIcon={
+                                                <ExternalLink className="h-3 w-3" />
+                                            }
+                                        >
+                                            View
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
-
-            {/* Leaflet Map Canvas */}
-            <div
-                ref={mapContainerRef}
-                className={`w-full ${heightClassName} bg-subtle`}
-                aria-label="INCAT Campus interactive map"
-            />
 
             {/* Quick-Snap Building Hub Pills in Interactive Picker Mode */}
             {interactivePicker && (
@@ -687,182 +933,6 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                     ))}
                 </div>
             )}
-
-            {/* Bottom Legend / Picker Helper Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-3.5 py-2.5 text-xs text-muted">
-                {interactivePicker ? (
-                    <div className="flex items-center gap-2 font-medium text-text-secondary">
-                        <MapPin className="h-3.5 w-3.5 shrink-0 text-accent" />
-                        <span>
-                            Tap anywhere on campus, drag the pin, or tap a
-                            building badge to snap.
-                        </span>
-                    </div>
-                ) : (
-                    <div className="flex flex-wrap items-center gap-3.5">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
-                            <span className="h-2.5 w-2.5 rounded-full bg-lost" />
-                            Lost ({lostCount})
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
-                            <span className="h-2.5 w-2.5 rounded-full bg-found" />
-                            Found ({foundCount})
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
-                            <span className="h-2.5 w-2.5 rounded-full bg-returned" />
-                            Returned ({returnedCount})
-                        </span>
-                        <span className="inline-flex items-center gap-1 font-semibold text-accent">
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            Official Drop-off Hubs
-                        </span>
-                    </div>
-                )}
-
-                {geoError && (
-                    <span className="font-medium text-danger">{geoError}</span>
-                )}
-            </div>
-
-            {/* Slide-Up Detail Card (Bottom Sheet on Mobile, Floating Side Panel on Desktop) */}
-            <AnimatePresence>
-                {!interactivePicker && activePost && activeCluster && (
-                    <motion.div
-                        key={activeCluster.key}
-                        initial={{ opacity: 0, y: 24, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 16, scale: 0.98 }}
-                        transition={SPRING_SHEET}
-                        className="theme-surface absolute right-3 bottom-12 left-3 z-450rounded-2xl border border-border-strong bg-surface/98 p-3.5 shadow-lg backdrop-blur-md sm:right-auto sm:left-4 sm:w-96"
-                    >
-                        <div className="flex items-start justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <StatusBadge
-                                    type={activePost.type}
-                                    status={activePost.status}
-                                />
-                                <span className="text-[11px] text-muted">
-                                    {formatRelativeTime(activePost.createdAt)}
-                                </span>
-                                {activeCluster.posts.length > 1 && (
-                                    <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-semibold text-text-secondary">
-                                        {activePostIndex + 1} of{" "}
-                                        {activeCluster.posts.length} here
-                                    </span>
-                                )}
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={() => setActiveCluster(null)}
-                                aria-label="Close pin preview"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-text cursor-pointer"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-
-                        {/* Thumbnail + Title + Summary */}
-                        <div className="mt-2.5 flex gap-3">
-                            <div className="h-16 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-subtle">
-                                {activePost.imageUrls.length > 0 ? (
-                                    <img
-                                        src={activePost.imageUrls[0]}
-                                        alt={activePost.title}
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="h-full w-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-muted">
-                                        {getCategoryIcon(
-                                            activePost.category,
-                                            24,
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                                <div className="text-[11px] font-medium text-muted">
-                                    {formatCategoryLabel(activePost.category)}
-                                </div>
-                                <h4 className="font-display truncate text-sm font-bold text-text">
-                                    {activePost.title}
-                                </h4>
-                                <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">
-                                    {activePost.description}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs">
-                            <span className="inline-flex items-center gap-1 truncate font-medium text-text-secondary">
-                                <MapPin className="h-3.5 w-3.5 shrink-0 text-accent" />
-                                <span className="truncate">
-                                    {activePost.locationName}
-                                </span>
-                            </span>
-
-                            <div className="flex shrink-0 items-center gap-1.5">
-                                {activeCluster.posts.length > 1 && (
-                                    <div className="inline-flex items-center rounded-lg border border-border bg-subtle p-0.5">
-                                        <button
-                                            type="button"
-                                            aria-label="Previous item at this location"
-                                            onClick={() =>
-                                                setActivePostIndex(
-                                                    (prev) =>
-                                                        (prev -
-                                                            1 +
-                                                            activeCluster.posts
-                                                                .length) %
-                                                        activeCluster.posts
-                                                            .length,
-                                                )
-                                            }
-                                            className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
-                                        >
-                                            <ChevronLeft className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            aria-label="Next item at this location"
-                                            onClick={() =>
-                                                setActivePostIndex(
-                                                    (prev) =>
-                                                        (prev + 1) %
-                                                        activeCluster.posts
-                                                            .length,
-                                                )
-                                            }
-                                            className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
-                                        >
-                                            <ChevronRight className="h-3.5 w-3.5" />
-                                        </button>
-                                    </div>
-                                )}
-
-                                {(onSelectPost || onSelectItem) && (
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
-                                        onClick={() => {
-                                            onSelectPost?.(activePost);
-                                            onSelectItem?.(activePost);
-                                        }}
-                                        rightIcon={
-                                            <ExternalLink className="h-3 w-3" />
-                                        }
-                                    >
-                                        View
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </div>
     );
 };
