@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
     AlertTriangle,
     Check,
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
     Copy,
@@ -11,7 +13,6 @@ import {
     Lock,
     MapPin,
     ShieldQuestion,
-    Sparkles,
     Tag as TagIcon,
     Trash2,
     X,
@@ -23,6 +24,12 @@ import {
     getStoredCampusCode,
     setStoredCampusCode,
 } from "../lib/keys";
+import {
+    EASE_OUT_FAST,
+    SPRING_SHEET,
+    SPRING_SNAPPY,
+    fadeInUpVariants,
+} from "../lib/motion";
 import type {
     CampusLocation,
     ContactConfig,
@@ -35,6 +42,7 @@ import type {
 } from "../types";
 import { CampusMap } from "./CampusMap";
 import { ContactMatrix, DEFAULT_CONTACT_CONFIG } from "./ContactMatrix";
+import { Button, Input, Select, Textarea } from "./ui/primitives";
 
 export interface PostModalProps {
     /** Whether the modal is open */
@@ -69,6 +77,12 @@ const CATEGORIES: readonly { value: ItemCategory; label: string }[] = [
     { value: "apparel_umbrellas", label: "Apparel & Umbrellas" },
     { value: "shop_tools", label: "Shop / Drafting Tools" },
     { value: "other", label: "Other Items" },
+] as const;
+
+const STEP_META = [
+    { num: 1, label: "Item & Photo" },
+    { num: 2, label: "Campus Spot" },
+    { num: 3, label: "Contact & Verify" },
 ] as const;
 
 async function compressImageBeforeUpload(file: File): Promise<File> {
@@ -135,7 +149,7 @@ export const PostModal: React.FC<PostModalProps> = ({
     myTags = [],
     defaultType = "lost",
 }) => {
-    const modalOpen = isOpen ?? open ?? true;
+    const modalOpen = isOpen ?? open ?? false;
     const availableLocations: readonly CampusLocation[] =
         locations && locations.length > 0 ? locations : CAMPUS_HUBS;
 
@@ -168,7 +182,7 @@ export const PostModal: React.FC<PostModalProps> = ({
         editingPost?.linkedTagCode ?? "",
     );
 
-    // Uploaded image state
+    // Uploaded image state + drag & drop
     const [imageKeys, setImageKeys] = useState<string[]>(
         editingPost?.imageUrls ?? [],
     );
@@ -176,6 +190,7 @@ export const PostModal: React.FC<PostModalProps> = ({
         editingPost?.imageUrls ?? [],
     );
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     // Contact & Claim Verification
     const [contact, setContact] = useState<ContactConfig>(
@@ -221,8 +236,6 @@ export const PostModal: React.FC<PostModalProps> = ({
         }
     }, [modalOpen, editingPost]);
 
-    if (!modalOpen) return null;
-
     const handleLocationDropdownChange = (nextLocId: string) => {
         setLocationId(nextLocId);
         const hub = availableLocations.find((l) => l.id === nextLocId);
@@ -231,13 +244,12 @@ export const PostModal: React.FC<PostModalProps> = ({
         }
     };
 
-    const handleImageFileSelect = async (
-        e: React.ChangeEvent<HTMLInputElement>,
-    ) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const processSelectedFile = async (file: File) => {
         setErrorMsg(null);
-
+        if (!file.type.startsWith("image/")) {
+            setErrorMsg("Please select a valid image file (JPG, PNG, WebP).");
+            return;
+        }
         if (imageKeys.length >= 3) {
             setErrorMsg("You can attach up to 3 photos per post.");
             return;
@@ -256,7 +268,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                     uploaded.url || localPreview,
                 ]);
             } catch {
-                // Fallback if R2 bucket is not bound in pure Vite mode
                 const reader = new FileReader();
                 reader.onloadend = () => {
                     if (typeof reader.result === "string") {
@@ -278,7 +289,24 @@ export const PostModal: React.FC<PostModalProps> = ({
             );
         } finally {
             setUploadingImage(false);
-            e.target.value = "";
+        }
+    };
+
+    const handleImageFileSelect = async (
+        e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await processSelectedFile(file);
+        e.target.value = "";
+    };
+
+    const handleDropFile = async (e: React.DragEvent<HTMLLabelElement>) => {
+        e.preventDefault();
+        setIsDraggingOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) {
+            await processSelectedFile(file);
         }
     };
 
@@ -387,637 +415,723 @@ export const PostModal: React.FC<PostModalProps> = ({
     };
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="post-modal-title"
-        >
-            <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-100 shadow-2xl">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
-                    <div>
-                        <h2
-                            id="post-modal-title"
-                            className="text-base font-bold sm:text-lg"
-                        >
-                            {step === 4
-                                ? "Post Published — Save Your Edit Key"
-                                : editingPost
-                                  ? "Edit Campus Post"
-                                  : "Post to Findr INCAT Wall"}
-                        </h2>
-                        {step < 4 && (
-                            <p className="text-xs text-neutral-400">
-                                Step {step} of 3 &middot;{" "}
-                                {step === 1
-                                    ? "Item details & photo"
-                                    : step === 2
-                                      ? "Where & when on campus"
-                                      : "Privacy & verification"}
-                            </p>
-                        )}
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close modal"
-                        className="rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
-                    >
-                        <X className="h-5 w-5" />
-                    </button>
-                </div>
-
-                {/* Step Progress Bar */}
-                {step < 4 && (
-                    <div className="grid grid-cols-3 gap-1 bg-neutral-900 px-5 py-2">
-                        {[1, 2, 3].map((s) => (
-                            <button
-                                key={s}
-                                type="button"
-                                onClick={() => {
-                                    if (s === 1 || canAdvanceFromStep1) {
-                                        setStep(s as 1 | 2 | 3);
-                                    }
-                                }}
-                                className={`h-1.5 rounded-full transition-colors ${
-                                    step >= s
-                                        ? "bg-emerald-500"
-                                        : "bg-neutral-800"
-                                }`}
-                                aria-label={`Go to step ${s}`}
-                            />
-                        ))}
-                    </div>
-                )}
-
-                {/* Body */}
-                <form
-                    onSubmit={handleFinalSubmit}
-                    className="flex-1 space-y-5 overflow-y-auto px-5 py-4"
+        <AnimatePresence>
+            {modalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="post-modal-title"
                 >
-                    {errorMsg && (
-                        <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-xs text-rose-200">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                            <span>{errorMsg}</span>
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={EASE_OUT_FAST}
+                        onClick={onClose}
+                        className="fixed inset-0 bg-black/55 backdrop-blur-[2px]"
+                    />
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 32, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 24, scale: 0.98 }}
+                        transition={SPRING_SHEET}
+                        className="theme-surface relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-surface text-text shadow-lg"
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                            <div>
+                                <h2
+                                    id="post-modal-title"
+                                    className="font-display text-lg font-bold text-text sm:text-xl"
+                                >
+                                    {step === 4
+                                        ? "Notice Published — Save Your Recovery Key"
+                                        : editingPost
+                                          ? "Edit Campus Notice"
+                                          : "Post to Findr INCAT Board"}
+                                </h2>
+                                {step < 4 && (
+                                    <p className="text-xs text-muted">
+                                        Step {step} of 3 &middot;{" "}
+                                        {STEP_META[step - 1]?.label}
+                                    </p>
+                                )}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                aria-label="Close modal"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted transition-colors hover:bg-subtle hover:text-text cursor-pointer"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
                         </div>
-                    )}
 
-                    {/* STEP 1: Type, Photo, Title, Category, Description */}
-                    {step === 1 && (
-                        <div className="space-y-4">
-                            {/* Lost vs Found Toggle */}
-                            <div className="grid grid-cols-2 gap-2.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setType("lost")}
-                                    className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
-                                        type === "lost"
-                                            ? "border-rose-500/70 bg-rose-950/25 text-rose-100 shadow-sm"
-                                            : "border-neutral-800 bg-neutral-900/40 text-neutral-400 hover:border-neutral-700"
-                                    }`}
-                                >
-                                    <span className="text-xs font-bold tracking-wider uppercase">
-                                        I Lost Something
-                                    </span>
-                                    <span className="mt-0.5 text-xs text-neutral-400">
-                                        Alert INCAT students & hubs to watch for
-                                        your item
-                                    </span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setType("found")}
-                                    className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
-                                        type === "found"
-                                            ? "border-emerald-500/70 bg-emerald-950/25 text-emerald-100 shadow-sm"
-                                            : "border-neutral-800 bg-neutral-900/40 text-neutral-400 hover:border-neutral-700"
-                                    }`}
-                                >
-                                    <span className="text-xs font-bold tracking-wider uppercase">
-                                        I Found Something
-                                    </span>
-                                    <span className="mt-0.5 text-xs text-neutral-400">
-                                        Help return an item turned in or spotted
-                                        on campus
-                                    </span>
-                                </button>
-                            </div>
-
-                            {/* Title & Category */}
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                <div className="sm:col-span-2">
-                                    <label
-                                        htmlFor="post-title"
-                                        className="mb-1 block text-xs font-medium text-neutral-300"
-                                    >
-                                        Item Title *
-                                    </label>
-                                    <input
-                                        id="post-title"
-                                        type="text"
-                                        required
-                                        maxLength={120}
-                                        value={title}
-                                        onChange={(e) =>
-                                            setTitle(e.target.value)
-                                        }
-                                        placeholder={
-                                            type === "lost"
-                                                ? "e.g., Black leather cardholder wallet"
-                                                : "e.g., Casio fx-991EX Calculator found at ICT Lab"
-                                        }
-                                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label
-                                        htmlFor="post-category"
-                                        className="mb-1 block text-xs font-medium text-neutral-300"
-                                    >
-                                        Category *
-                                    </label>
-                                    <select
-                                        id="post-category"
-                                        value={category}
-                                        onChange={(e) =>
-                                            setCategory(
-                                                e.target.value as ItemCategory,
-                                            )
-                                        }
-                                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-emerald-500 focus:outline-none"
-                                    >
-                                        {CATEGORIES.map((c) => (
-                                            <option
-                                                key={c.value}
-                                                value={c.value}
-                                            >
-                                                {c.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Description */}
-                            <div>
-                                <label
-                                    htmlFor="post-description"
-                                    className="mb-1 block text-xs font-medium text-neutral-300"
-                                >
-                                    Description & Distinguishing Marks *
-                                </label>
-                                <textarea
-                                    id="post-description"
-                                    rows={3}
-                                    required
-                                    maxLength={1500}
-                                    value={description}
-                                    onChange={(e) =>
-                                        setDescription(e.target.value)
-                                    }
-                                    placeholder={
-                                        type === "lost"
-                                            ? "Mention stickers, color, brand, or where you last had it..."
-                                            : "Describe the item generally (keep 1 detail secret if you want to use Claim Verification in Step 3)."
-                                    }
-                                    className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-emerald-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Photo Upload (Compressed + R2) */}
-                            <div>
-                                <div className="mb-1.5 flex items-center justify-between text-xs">
-                                    <span className="font-medium text-neutral-300">
-                                        Photos (Optional, max 3 &middot;
-                                        auto-compressed)
-                                    </span>
-                                    <span className="text-neutral-500">
-                                        {imagePreviews.length}/3 attached
-                                    </span>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-3">
-                                    {imagePreviews.map((src, idx) => (
-                                        <div
-                                            key={idx}
-                                            className="group relative h-20 w-20 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900"
+                        {/* Numbered Stepper Progress Bar */}
+                        {step < 4 && (
+                            <div className="grid grid-cols-3 gap-2 border-b border-border bg-subtle/50 px-5 py-2.5">
+                                {STEP_META.map((s) => {
+                                    const isActive = step === s.num;
+                                    const isDone = step > s.num;
+                                    return (
+                                        <button
+                                            key={s.num}
+                                            type="button"
+                                            onClick={() => {
+                                                if (
+                                                    s.num === 1 ||
+                                                    canAdvanceFromStep1
+                                                ) {
+                                                    setStep(s.num as 1 | 2 | 3);
+                                                }
+                                            }}
+                                            className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs font-semibold transition-colors cursor-pointer ${
+                                                isActive
+                                                    ? "bg-surface text-accent shadow-sm"
+                                                    : isDone
+                                                      ? "text-text"
+                                                      : "text-muted"
+                                            }`}
                                         >
-                                            <img
-                                                src={src}
-                                                alt={`Upload preview ${idx + 1}`}
-                                                className="h-full w-full object-cover"
-                                            />
+                                            <span
+                                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                                                    isActive || isDone
+                                                        ? "bg-accent text-accent-fg"
+                                                        : "bg-border text-muted"
+                                                }`}
+                                            >
+                                                {isDone ? (
+                                                    <Check className="h-3 w-3" />
+                                                ) : (
+                                                    s.num
+                                                )}
+                                            </span>
+                                            <span className="truncate">
+                                                {s.label}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Form Body with Animated Step Transitions */}
+                        <form
+                            onSubmit={handleFinalSubmit}
+                            className="flex-1 space-y-5 overflow-y-auto px-5 py-4"
+                        >
+                            {errorMsg && (
+                                <div className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-bg p-3 text-xs font-medium text-danger">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <span>{errorMsg}</span>
+                                </div>
+                            )}
+
+                            <AnimatePresence mode="wait">
+                                {/* STEP 1: Type, Photo, Title, Category, Description */}
+                                {step === 1 && (
+                                    <motion.div
+                                        key="post-step-1"
+                                        variants={fadeInUpVariants}
+                                        initial="hidden"
+                                        animate="visible"
+                                        exit="exit"
+                                        className="space-y-4"
+                                    >
+                                        {/* Lost vs Found Toggle */}
+                                        <div className="grid grid-cols-2 gap-3">
                                             <button
                                                 type="button"
-                                                onClick={() =>
-                                                    removeImageAt(idx)
-                                                }
-                                                aria-label="Remove photo"
-                                                className="absolute top-1 right-1 rounded-full bg-black/80 p-1 text-rose-400 opacity-90 hover:bg-black"
+                                                onClick={() => setType("lost")}
+                                                className={`flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all cursor-pointer ${
+                                                    type === "lost"
+                                                        ? "border-lost bg-lost-bg text-text shadow-sm"
+                                                        : "border-border bg-subtle/40 text-muted hover:border-border-strong"
+                                                }`}
                                             >
-                                                <Trash2 className="h-3.5 w-3.5" />
+                                                <span className="text-xs font-bold tracking-wider text-lost uppercase">
+                                                    I Lost Something
+                                                </span>
+                                                <span className="mt-0.5 text-xs text-text-secondary">
+                                                    Alert INCAT students &amp;
+                                                    hubs to watch for your item
+                                                </span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setType("found")}
+                                                className={`flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all cursor-pointer ${
+                                                    type === "found"
+                                                        ? "border-found bg-found-bg text-text shadow-sm"
+                                                        : "border-border bg-subtle/40 text-muted hover:border-border-strong"
+                                                }`}
+                                            >
+                                                <span className="text-xs font-bold tracking-wider text-found uppercase">
+                                                    I Found Something
+                                                </span>
+                                                <span className="mt-0.5 text-xs text-text-secondary">
+                                                    Help return an item turned
+                                                    in or spotted on campus
+                                                </span>
                                             </button>
                                         </div>
-                                    ))}
 
-                                    {imagePreviews.length < 3 && (
-                                        <label className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-700 bg-neutral-900/50 text-xs text-neutral-400 transition-colors hover:border-emerald-500/60 hover:text-emerald-300">
-                                            <ImagePlus className="h-5 w-5" />
-                                            <span>
-                                                {uploadingImage
-                                                    ? "Uploading..."
-                                                    : "Add photo"}
-                                            </span>
-                                            <input
-                                                type="file"
-                                                accept="image/jpeg,image/png,image/webp,image/gif"
-                                                disabled={uploadingImage}
-                                                onChange={handleImageFileSelect}
-                                                className="sr-only"
-                                            />
-                                        </label>
-                                    )}
-                                </div>
-                            </div>
+                                        {/* Title & Category */}
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                            <div className="sm:col-span-2">
+                                                <Input
+                                                    id="post-title"
+                                                    label="Item Title *"
+                                                    required
+                                                    maxLength={120}
+                                                    value={title}
+                                                    onChange={(e) =>
+                                                        setTitle(e.target.value)
+                                                    }
+                                                    placeholder={
+                                                        type === "lost"
+                                                            ? "e.g., Black leather cardholder wallet"
+                                                            : "e.g., Casio fx-991EX Calculator found at ICT Lab"
+                                                    }
+                                                />
+                                            </div>
 
-                            {/* Optional Link to Existing Findr QR Tag */}
-                            {myTags.length > 0 && (
-                                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
-                                    <label
-                                        htmlFor="post-linked-tag"
-                                        className="flex items-center gap-1.5 text-xs font-medium text-neutral-300"
-                                    >
-                                        <TagIcon className="h-3.5 w-3.5 text-emerald-400" />
-                                        Link to one of your Findr QR Tags
-                                        (Optional)
-                                    </label>
-                                    <select
-                                        id="post-linked-tag"
-                                        value={linkedTagCode}
-                                        onChange={(e) =>
-                                            setLinkedTagCode(e.target.value)
-                                        }
-                                        className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-200"
-                                    >
-                                        <option value="">
-                                            Not linked to a QR tag
-                                        </option>
-                                        {myTags.map((t) => (
-                                            <option
-                                                key={t.id}
-                                                value={t.publicCode}
+                                            <Select
+                                                id="post-category"
+                                                label="Category *"
+                                                value={category}
+                                                onChange={(e) =>
+                                                    setCategory(
+                                                        e.target
+                                                            .value as ItemCategory,
+                                                    )
+                                                }
                                             >
-                                                {t.label} (#{t.publicCode})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                                                {CATEGORIES.map((c) => (
+                                                    <option
+                                                        key={c.value}
+                                                        value={c.value}
+                                                    >
+                                                        {c.label}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </div>
 
-                    {/* STEP 2: INCAT Location + Map Pin + Date/Time */}
-                    {step === 2 && (
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <div>
-                                    <label
-                                        htmlFor="post-location"
-                                        className="mb-1 block text-xs font-medium text-neutral-300"
-                                    >
-                                        INCAT Building / Campus Hub *
-                                    </label>
-                                    <select
-                                        id="post-location"
-                                        value={locationId}
-                                        onChange={(e) =>
-                                            handleLocationDropdownChange(
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-emerald-500 focus:outline-none"
-                                    >
-                                        {availableLocations.map((loc) => (
-                                            <option key={loc.id} value={loc.id}>
-                                                {loc.name} ({loc.buildingCode})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        {/* Description */}
+                                        <Textarea
+                                            id="post-description"
+                                            label="Description & Distinguishing Marks *"
+                                            rows={3}
+                                            required
+                                            maxLength={1500}
+                                            value={description}
+                                            onChange={(e) =>
+                                                setDescription(e.target.value)
+                                            }
+                                            placeholder={
+                                                type === "lost"
+                                                    ? "Mention stickers, color, brand, or where you last had it..."
+                                                    : "Describe the item generally (keep 1 detail secret if you want to use Claim Verification in Step 3)."
+                                            }
+                                        />
 
-                                <div>
-                                    <label
-                                        htmlFor="post-occurred-at"
-                                        className="mb-1 block text-xs font-medium text-neutral-300"
-                                    >
-                                        When was it{" "}
-                                        {type === "lost" ? "lost" : "found"}?
-                                    </label>
-                                    <input
-                                        id="post-occurred-at"
-                                        type="datetime-local"
-                                        value={occurredAt}
-                                        onChange={(e) =>
-                                            setOccurredAt(e.target.value)
-                                        }
-                                        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-emerald-500 focus:outline-none"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Interactive INCAT Map Picker */}
-                            <div>
-                                <div className="mb-1.5 flex items-center justify-between text-xs">
-                                    <span className="inline-flex items-center gap-1 font-medium text-neutral-300">
-                                        <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-                                        Fine-tune exact spot on the INCAT map
-                                    </span>
-                                    <span className="font-mono text-[11px] text-neutral-400">
-                                        {coords.lat.toFixed(5)},{" "}
-                                        {coords.lng.toFixed(5)}
-                                    </span>
-                                </div>
-
-                                <CampusMap
-                                    interactivePicker
-                                    locations={
-                                        availableLocations as CampusLocation[]
-                                    }
-                                    pickedCoords={coords}
-                                    heightClassName="h-[260px]"
-                                    onPickCoords={(picked) => {
-                                        setCoords({
-                                            lat: picked.lat,
-                                            lng: picked.lng,
-                                        });
-                                        if (picked.nearestHubId) {
-                                            setLocationId(picked.nearestHubId);
-                                        }
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* STEP 3: Contact Matrix & Optional Claim Verification */}
-                    {step === 3 && (
-                        <div className="space-y-4">
-                            {type === "found" && (
-                                <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/15 p-4">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-200">
-                                                <ShieldQuestion className="h-4 w-4 text-emerald-400" />
-                                                <span>
-                                                    Ownership Claim Verification
-                                                    (Optional)
+                                        {/* Photo Upload with Drag-and-Drop & Auto-Compression */}
+                                        <div>
+                                            <div className="mb-1.5 flex items-center justify-between text-xs">
+                                                <span className="font-semibold text-text">
+                                                    Photos (Optional, max 3
+                                                    &middot; auto-compressed)
+                                                </span>
+                                                <span className="text-muted">
+                                                    {imagePreviews.length}/3
+                                                    attached
                                                 </span>
                                             </div>
-                                            <p className="text-xs text-neutral-400">
-                                                Ask a question only the rightful
-                                                owner can answer (e.g.,
-                                                wallpaper, ID number, keychain
-                                                charm) before your direct
-                                                contact is unlocked.
-                                            </p>
-                                        </div>
-                                        <input
-                                            type="checkbox"
-                                            checked={enableClaimQuestion}
-                                            onChange={(e) =>
-                                                setEnableClaimQuestion(
-                                                    e.target.checked,
-                                                )
-                                            }
-                                            aria-label="Enable ownership claim verification"
-                                            className="mt-1 h-4 w-4 rounded border-neutral-600 text-emerald-600 focus:ring-emerald-500"
-                                        />
-                                    </div>
 
-                                    {enableClaimQuestion && (
-                                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <div>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                {imagePreviews.map(
+                                                    (src, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            className="group relative h-24 w-24 overflow-hidden rounded-xl border border-border bg-subtle"
+                                                        >
+                                                            <img
+                                                                src={src}
+                                                                alt={`Upload preview ${idx + 1}`}
+                                                                className="h-full w-full object-cover"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    removeImageAt(
+                                                                        idx,
+                                                                    )
+                                                                }
+                                                                aria-label="Remove photo"
+                                                                className="absolute top-1.5 right-1.5 rounded-full bg-black/80 p-1 text-white hover:bg-danger cursor-pointer"
+                                                            >
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ),
+                                                )}
+
+                                                {imagePreviews.length < 3 && (
+                                                    <label
+                                                        onDragOver={(e) => {
+                                                            e.preventDefault();
+                                                            setIsDraggingOver(
+                                                                true,
+                                                            );
+                                                        }}
+                                                        onDragLeave={() =>
+                                                            setIsDraggingOver(
+                                                                false,
+                                                            )
+                                                        }
+                                                        onDrop={handleDropFile}
+                                                        className={`flex h-24 flex-1 min-w-40 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 text-center text-xs transition-colors ${
+                                                            isDraggingOver
+                                                                ? "border-accent bg-accent-soft text-accent"
+                                                                : "border-border-strong bg-subtle/40 text-muted hover:border-accent hover:text-text"
+                                                        }`}
+                                                    >
+                                                        <ImagePlus className="h-5 w-5 text-accent" />
+                                                        <span className="font-semibold">
+                                                            {uploadingImage
+                                                                ? "Compressing & uploading..."
+                                                                : "Click or drag & drop photo"}
+                                                        </span>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/jpeg,image/png,image/webp,image/gif"
+                                                            disabled={
+                                                                uploadingImage
+                                                            }
+                                                            onChange={
+                                                                handleImageFileSelect
+                                                            }
+                                                            className="sr-only"
+                                                        />
+                                                    </label>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Optional Link to Existing Findr QR Tag */}
+                                        {myTags.length > 0 && (
+                                            <div className="rounded-xl border border-border bg-subtle/50 p-3.5">
                                                 <label
-                                                    htmlFor="claim-question"
-                                                    className="mb-1 block text-xs font-medium text-neutral-300"
+                                                    htmlFor="post-linked-tag"
+                                                    className="flex items-center gap-1.5 text-xs font-semibold text-text"
                                                 >
-                                                    Verification Question *
+                                                    <TagIcon className="h-3.5 w-3.5 text-accent" />
+                                                    Link to one of your Findr QR
+                                                    Tags (Optional)
                                                 </label>
-                                                <input
-                                                    id="claim-question"
-                                                    type="text"
-                                                    value={claimQuestionPrompt}
+                                                <select
+                                                    id="post-linked-tag"
+                                                    value={linkedTagCode}
                                                     onChange={(e) =>
-                                                        setClaimQuestionPrompt(
+                                                        setLinkedTagCode(
                                                             e.target.value,
                                                         )
                                                     }
-                                                    placeholder="e.g., What sticker is on the back cover?"
-                                                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label
-                                                    htmlFor="claim-answer"
-                                                    className="mb-1 block text-xs font-medium text-neutral-300"
+                                                    className="mt-1.5 min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text"
                                                 >
-                                                    Expected Answer
-                                                    (case-insensitive) *
-                                                </label>
-                                                <input
-                                                    id="claim-answer"
-                                                    type="text"
-                                                    value={claimAnswer}
-                                                    onChange={(e) =>
-                                                        setClaimAnswer(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    placeholder="e.g., One Piece Jolly Roger"
-                                                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100"
-                                                />
+                                                    <option value="">
+                                                        Not linked to a QR tag
+                                                    </option>
+                                                    {myTags.map((t) => (
+                                                        <option
+                                                            key={t.id}
+                                                            value={t.publicCode}
+                                                        >
+                                                            {t.label} (#
+                                                            {t.publicCode})
+                                                        </option>
+                                                    ))}
+                                                </select>
                                             </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <ContactMatrix
-                                value={contact}
-                                onChange={setContact}
-                            />
-
-                            {needsCampusCode && (
-                                <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3.5">
-                                    <label
-                                        htmlFor="campus-access-code"
-                                        className="flex items-center gap-1.5 text-xs font-semibold text-amber-200"
-                                    >
-                                        <Lock className="h-3.5 w-3.5 text-amber-400" />
-                                        INCAT Campus Access Code
-                                    </label>
-                                    <input
-                                        id="campus-access-code"
-                                        type="text"
-                                        value={campusCode}
-                                        onChange={(e) =>
-                                            setCampusCode(e.target.value)
-                                        }
-                                        placeholder="Enter campus code (e.g., INCAT2026)"
-                                        className="mt-2 w-full rounded-lg border border-amber-500/50 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-100"
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* STEP 4: One-Time Capability Key Receipt */}
-                    {step === 4 && createdResult && (
-                        <div className="space-y-4 py-2">
-                            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4">
-                                <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
-                                    <Sparkles className="h-4 w-4" />
-                                    <span>
-                                        Your post is now live on the INCAT Wall!
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-xs leading-relaxed text-neutral-300">
-                                    Findr INCAT uses{" "}
-                                    <strong>zero user accounts</strong>. Control
-                                    of this post is stored in your browser and
-                                    tied to the secret capability key below.
-                                </p>
-                            </div>
-
-                            <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs">
-                                <div className="flex items-center gap-2 font-semibold text-amber-300">
-                                    <KeyRound className="h-4 w-4" />
-                                    <span>
-                                        Save your recovery link or file (shown
-                                        once — no password reset)
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-neutral-400">
-                                    If you clear your browser data or switch
-                                    phones, you will need this link or recovery
-                                    file to mark the item as returned or edit
-                                    the post.
-                                </p>
-
-                                <div className="mt-3 flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        readOnly
-                                        value={`${window.location.origin}${createdResult.manageUrl}`}
-                                        aria-label="Secret post management link"
-                                        className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-xs text-emerald-300"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={handleCopyEditLink}
-                                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-                                    >
-                                        {copiedKey ? (
-                                            <>
-                                                <Check className="h-3.5 w-3.5" />
-                                                <span>Copied</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Copy className="h-3.5 w-3.5" />
-                                                <span>Copy Link</span>
-                                            </>
                                         )}
-                                    </button>
-                                </div>
+                                    </motion.div>
+                                )}
 
-                                <div className="mt-3 flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={exportRecoveryJson}
-                                        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+                                {/* STEP 2: INCAT Location + Map Pin + Date/Time */}
+                                {step === 2 && (
+                                    <motion.div
+                                        key="post-step-2"
+                                        variants={fadeInUpVariants}
+                                        initial="hidden"
+                                        animate="visible"
+                                        exit="exit"
+                                        className="space-y-4"
                                     >
-                                        <Download className="h-3.5 w-3.5 text-emerald-400" />
-                                        <span>Download Recovery JSON</span>
-                                    </button>
-                                </div>
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            <Select
+                                                id="post-location"
+                                                label="INCAT Building / Campus Hub *"
+                                                value={locationId}
+                                                onChange={(e) =>
+                                                    handleLocationDropdownChange(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            >
+                                                {availableLocations.map(
+                                                    (loc) => (
+                                                        <option
+                                                            key={loc.id}
+                                                            value={loc.id}
+                                                        >
+                                                            {loc.name} (
+                                                            {loc.buildingCode})
+                                                        </option>
+                                                    ),
+                                                )}
+                                            </Select>
+
+                                            <Input
+                                                id="post-occurred-at"
+                                                type="datetime-local"
+                                                label={`When was it ${type === "lost" ? "lost" : "found"}?`}
+                                                value={occurredAt}
+                                                onChange={(e) =>
+                                                    setOccurredAt(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </div>
+
+                                        {/* Interactive INCAT Map Picker */}
+                                        <div>
+                                            <div className="mb-1.5 flex items-center justify-between text-xs">
+                                                <span className="inline-flex items-center gap-1 font-semibold text-text">
+                                                    <MapPin className="h-3.5 w-3.5 text-accent" />
+                                                    Where did you{" "}
+                                                    {type === "lost"
+                                                        ? "lose"
+                                                        : "find"}{" "}
+                                                    it?
+                                                </span>
+                                                <span className="font-mono text-[11px] text-muted">
+                                                    {coords.lat.toFixed(5)},{" "}
+                                                    {coords.lng.toFixed(5)}
+                                                </span>
+                                            </div>
+
+                                            <CampusMap
+                                                interactivePicker
+                                                locations={
+                                                    availableLocations as CampusLocation[]
+                                                }
+                                                pickedCoords={coords}
+                                                heightClassName="h-[260px]"
+                                                onPickCoords={(picked) => {
+                                                    setCoords({
+                                                        lat: picked.lat,
+                                                        lng: picked.lng,
+                                                    });
+                                                    if (picked.nearestHubId) {
+                                                        setLocationId(
+                                                            picked.nearestHubId,
+                                                        );
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+
+                                {/* STEP 3: Contact Matrix & Optional Claim Verification */}
+                                {step === 3 && (
+                                    <motion.div
+                                        key="post-step-3"
+                                        variants={fadeInUpVariants}
+                                        initial="hidden"
+                                        animate="visible"
+                                        exit="exit"
+                                        className="space-y-4"
+                                    >
+                                        {type === "found" && (
+                                            <div className="rounded-2xl border border-accent/30 bg-accent-soft p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2 text-sm font-bold text-text">
+                                                            <ShieldQuestion className="h-4 w-4 text-accent" />
+                                                            <span>
+                                                                Ownership Claim
+                                                                Verification
+                                                                (Optional)
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-text-secondary">
+                                                            Ask a question only
+                                                            the rightful owner
+                                                            can answer (e.g.,
+                                                            lockscreen
+                                                            wallpaper, keychain
+                                                            charm) before your
+                                                            direct contact is
+                                                            unlocked.
+                                                        </p>
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={
+                                                            enableClaimQuestion
+                                                        }
+                                                        onChange={(e) =>
+                                                            setEnableClaimQuestion(
+                                                                e.target
+                                                                    .checked,
+                                                            )
+                                                        }
+                                                        aria-label="Enable ownership claim verification"
+                                                        className="mt-1 h-4 w-4 rounded border-border-strong accent-accent"
+                                                    />
+                                                </div>
+
+                                                {enableClaimQuestion && (
+                                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                        <Input
+                                                            id="claim-question"
+                                                            label="Verification Question *"
+                                                            value={
+                                                                claimQuestionPrompt
+                                                            }
+                                                            onChange={(e) =>
+                                                                setClaimQuestionPrompt(
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            placeholder="e.g., What sticker is on the back cover?"
+                                                        />
+
+                                                        <Input
+                                                            id="claim-answer"
+                                                            label="Expected Answer (case-insensitive) *"
+                                                            value={claimAnswer}
+                                                            onChange={(e) =>
+                                                                setClaimAnswer(
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            placeholder="e.g., One Piece Jolly Roger"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <ContactMatrix
+                                            value={contact}
+                                            onChange={setContact}
+                                        />
+
+                                        {needsCampusCode && (
+                                            <div className="rounded-xl border border-found-border bg-found-bg p-3.5">
+                                                <label
+                                                    htmlFor="campus-access-code"
+                                                    className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-found"
+                                                >
+                                                    <Lock className="h-3.5 w-3.5" />
+                                                    INCAT Campus Access Code
+                                                </label>
+                                                <Input
+                                                    id="campus-access-code"
+                                                    value={campusCode}
+                                                    onChange={(e) =>
+                                                        setCampusCode(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    placeholder="Enter campus code (e.g., INCAT2026)"
+                                                />
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
+
+                                {/* STEP 4: One-Time Capability Key Receipt with Animated Checkmark */}
+                                {step === 4 && createdResult && (
+                                    <motion.div
+                                        key="post-step-4"
+                                        variants={fadeInUpVariants}
+                                        initial="hidden"
+                                        animate="visible"
+                                        className="space-y-4 py-2"
+                                    >
+                                        <div className="flex items-start gap-3.5 rounded-2xl border border-accent/35 bg-accent-soft p-4">
+                                            <motion.div
+                                                initial={{ scale: 0.5 }}
+                                                animate={{ scale: 1 }}
+                                                transition={SPRING_SNAPPY}
+                                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg shadow-sm"
+                                            >
+                                                <CheckCircle2 className="h-5 w-5" />
+                                            </motion.div>
+                                            <div>
+                                                <div className="font-display text-base font-bold text-text">
+                                                    Your notice is live on the
+                                                    INCAT Wall!
+                                                </div>
+                                                <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+                                                    Findr INCAT uses{" "}
+                                                    <strong>
+                                                        zero user accounts
+                                                    </strong>
+                                                    . Control of this notice is
+                                                    saved in your browser and
+                                                    tied to the secret
+                                                    capability key below.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-2xl border border-found-border bg-found-bg p-4 text-xs">
+                                            <div className="flex items-center gap-2 font-bold text-found">
+                                                <KeyRound className="h-4 w-4 shrink-0" />
+                                                <span>
+                                                    Save your recovery link or
+                                                    file (shown once — no
+                                                    password reset)
+                                                </span>
+                                            </div>
+                                            <p className="mt-1 text-text-secondary">
+                                                If you clear your browser data
+                                                or switch phones, you will need
+                                                this link or recovery JSON to
+                                                mark the item as returned.
+                                            </p>
+
+                                            <div className="mt-3 flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={`${window.location.origin}${createdResult.manageUrl}`}
+                                                    aria-label="Secret post management link"
+                                                    className="min-h-10 w-full rounded-xl border border-border bg-surface px-3 py-2 font-mono text-xs text-accent"
+                                                />
+                                                <Button
+                                                    variant="primary"
+                                                    size="sm"
+                                                    onClick={handleCopyEditLink}
+                                                    leftIcon={
+                                                        copiedKey ? (
+                                                            <Check className="h-3.5 w-3.5" />
+                                                        ) : (
+                                                            <Copy className="h-3.5 w-3.5" />
+                                                        )
+                                                    }
+                                                >
+                                                    {copiedKey
+                                                        ? "Copied"
+                                                        : "Copy Link"}
+                                                </Button>
+                                            </div>
+
+                                            <div className="mt-3">
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    onClick={exportRecoveryJson}
+                                                    leftIcon={
+                                                        <Download className="h-3.5 w-3.5 text-accent" />
+                                                    }
+                                                >
+                                                    Download Recovery JSON
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Footer Navigation */}
+                            <div className="flex items-center justify-between border-t border-border pt-4">
+                                {step === 1 && (
+                                    <Button
+                                        variant="secondary"
+                                        onClick={onClose}
+                                    >
+                                        Cancel
+                                    </Button>
+                                )}
+
+                                {step > 1 && step < 4 && (
+                                    <Button
+                                        variant="secondary"
+                                        onClick={() =>
+                                            setStep(
+                                                (prev) =>
+                                                    (prev - 1) as 1 | 2 | 3,
+                                            )
+                                        }
+                                        leftIcon={
+                                            <ChevronLeft className="h-4 w-4" />
+                                        }
+                                    >
+                                        Back
+                                    </Button>
+                                )}
+
+                                {step < 3 && (
+                                    <Button
+                                        variant="primary"
+                                        disabled={
+                                            step === 1 && !canAdvanceFromStep1
+                                        }
+                                        onClick={() =>
+                                            setStep(
+                                                (prev) => (prev + 1) as 2 | 3,
+                                            )
+                                        }
+                                        rightIcon={
+                                            <ChevronRight className="h-4 w-4" />
+                                        }
+                                        className="ml-auto"
+                                    >
+                                        Next
+                                    </Button>
+                                )}
+
+                                {step === 3 && (
+                                    <Button
+                                        type="submit"
+                                        variant="primary"
+                                        loading={submitting}
+                                        className="ml-auto"
+                                    >
+                                        {editingPost
+                                            ? "Save Changes"
+                                            : "Publish to INCAT Wall"}
+                                    </Button>
+                                )}
+
+                                {step === 4 && (
+                                    <Button
+                                        variant="primary"
+                                        onClick={onClose}
+                                        className="ml-auto"
+                                    >
+                                        Done
+                                    </Button>
+                                )}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Footer Navigation */}
-                    <div className="flex items-center justify-between border-t border-neutral-800 pt-4">
-                        {step === 1 && (
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className="rounded-xl border border-neutral-800 px-4 py-2 text-xs font-medium text-neutral-300 hover:bg-neutral-900"
-                            >
-                                Cancel
-                            </button>
-                        )}
-
-                        {step > 1 && step < 4 && (
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    setStep((prev) => (prev - 1) as 1 | 2 | 3)
-                                }
-                                className="inline-flex items-center gap-1 rounded-xl border border-neutral-800 px-4 py-2 text-xs font-medium text-neutral-300 hover:bg-neutral-900"
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                                <span>Back</span>
-                            </button>
-                        )}
-
-                        {step < 3 && (
-                            <button
-                                type="button"
-                                disabled={step === 1 && !canAdvanceFromStep1}
-                                onClick={() =>
-                                    setStep((prev) => (prev + 1) as 2 | 3)
-                                }
-                                className="ml-auto inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                <span>Next</span>
-                                <ChevronRight className="h-4 w-4" />
-                            </button>
-                        )}
-
-                        {step === 3 && (
-                            <button
-                                type="submit"
-                                disabled={submitting}
-                                className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-                            >
-                                <span>
-                                    {submitting
-                                        ? "Publishing..."
-                                        : editingPost
-                                          ? "Save Changes"
-                                          : "Publish to INCAT Wall"}
-                                </span>
-                            </button>
-                        )}
-
-                        {step === 4 && (
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className="ml-auto rounded-xl bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-                            >
-                                Done
-                            </button>
-                        )}
-                    </div>
-                </form>
-            </div>
-        </div>
+                        </form>
+                    </motion.div>
+                </div>
+            )}
+        </AnimatePresence>
     );
 };
 
