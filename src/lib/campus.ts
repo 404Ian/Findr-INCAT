@@ -4,7 +4,7 @@ import type { CampusLocation } from "../types";
 export { CAMPUS_HUBS };
 
 export const CAMPUS_CENTER: [number, number] = [18.20389, 120.59268];
-export const CAMPUS_DEFAULT_ZOOM = 17;
+export const CAMPUS_DEFAULT_ZOOM = 18;
 export const CAMPUS_MIN_ZOOM = 16;
 export const CAMPUS_MAX_ZOOM = 19;
 

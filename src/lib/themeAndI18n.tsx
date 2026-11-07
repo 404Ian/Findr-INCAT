@@ -46,12 +46,12 @@ const TRANSLATIONS: Record<
 > = {
     en: {
         postItem: "Post Item",
-        tabWall: "Wall",
+        tabWall: "Board",
         tabMyItems: "My items",
         tabScan: "Scan",
         showMap: "Show INCAT Map",
         hideMap: "Hide INCAT Map",
-        heroBadge: "INCAT Campus Notice Board",
+        heroBadge: "INCAT Lost & Found Board",
         heroTitle: "What’s missing at INCAT?",
         heroSubtitle:
             "Check items turned in at the Guard House, Guidance Office, or department shops. No account or login needed.",
