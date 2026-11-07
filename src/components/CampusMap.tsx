@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { AnimatePresence, motion } from "motion/react";
 import {
+    ChevronLeft,
+    ChevronRight,
     Compass,
     ExternalLink,
     Layers,
@@ -10,8 +14,23 @@ import {
     ShieldCheck,
     X,
 } from "lucide-react";
-import { CAMPUS_HUBS, INCAT_CENTER } from "../data/hubs";
+import {
+    CAMPUS_HUBS,
+    HUB_SNAP_RADIUS_METERS,
+    INCAT_CENTER,
+    INCAT_DEFAULT_ZOOM,
+    INCAT_MAX_BOUNDS,
+    INCAT_MAX_ZOOM,
+    INCAT_MIN_ZOOM,
+    INCAT_PICKER_ZOOM,
+    findNearestCampusHub,
+    haversineMeters,
+} from "../lib/campus";
+import { SPRING_SHEET } from "../lib/motion";
+import { useThemeAndI18n } from "../lib/themeAndI18n";
 import type { CampusLocation, Post } from "../types";
+import { formatCategoryLabel, getCategoryIcon } from "./CategoryArt";
+import { Button, StatusBadge } from "./ui/primitives";
 
 export interface CampusMapProps {
     /** Primary posts list */
@@ -46,35 +65,6 @@ interface ClusteredGroup {
     posts: Post[];
 }
 
-const LEAFLET_CSS_ID = "findr-leaflet-css";
-
-function ensureLeafletStylesheet(): void {
-    if (typeof document === "undefined") return;
-    if (document.getElementById(LEAFLET_CSS_ID)) return;
-    const link = document.createElement("link");
-    link.id = LEAFLET_CSS_ID;
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    link.crossOrigin = "";
-    document.head.appendChild(link);
-}
-
-function haversineMeters(
-    lat1: number,
-    lng1: number,
-    lat2: number,
-    lng2: number,
-): number {
-    const R = 6371e3;
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 function formatRelativeTime(iso: string): string {
     const diffMs = Date.now() - new Date(iso).getTime();
     if (Number.isNaN(diffMs)) return "Recently";
@@ -97,8 +87,9 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     pickedCoords = null,
     onPickCoords,
     className = "",
-    heightClassName = "h-[440px]",
+    heightClassName = "h-[460px]",
 }) => {
+    const { theme } = useThemeAndI18n();
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
     const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -119,6 +110,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     const [showHubLabels, setShowHubLabels] = useState(true);
     const [locatingUser, setLocatingUser] = useState(false);
     const [geoError, setGeoError] = useState<string | null>(null);
+    const [snappedHubName, setSnappedHubName] = useState<string | null>(null);
 
     // Group posts that share the same or very close coordinates (~12 meters)
     const clusteredGroups = useMemo<ClusteredGroup[]>(() => {
@@ -143,16 +135,37 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         return groups;
     }, [allPosts]);
 
-    // Initialize Leaflet Map centered on INCAT Campus
+    // Sync external selectedPostId from Wall with the map's active cluster preview
     useEffect(() => {
-        ensureLeafletStylesheet();
-        if (!mapContainerRef.current || mapInstanceRef.current) return;
+        if (!selectedPostId || interactivePicker) return;
+        const foundCluster = clusteredGroups.find((c) =>
+            c.posts.some((p) => p.id === selectedPostId),
+        );
+        if (foundCluster) {
+            const idx = foundCluster.posts.findIndex(
+                (p) => p.id === selectedPostId,
+            );
+            setActiveCluster(foundCluster);
+            setActivePostIndex(Math.max(0, idx));
+            mapInstanceRef.current?.panTo(
+                [foundCluster.lat, foundCluster.lng],
+                { animate: true },
+            );
+        }
+    }, [selectedPostId, clusteredGroups, interactivePicker]);
 
-        const map = L.map(mapContainerRef.current, {
+    // Initialize Leaflet Map centered on INCAT Campus with bounds & ResizeObserver
+    useEffect(() => {
+        const container = mapContainerRef.current;
+        if (!container || mapInstanceRef.current) return;
+
+        const map = L.map(container, {
             center: [INCAT_CENTER.lat, INCAT_CENTER.lng],
-            zoom: interactivePicker ? 18 : INCAT_CENTER.zoom,
-            minZoom: 15,
-            maxZoom: 20,
+            zoom: interactivePicker ? INCAT_PICKER_ZOOM : INCAT_DEFAULT_ZOOM,
+            minZoom: INCAT_MIN_ZOOM,
+            maxZoom: INCAT_MAX_ZOOM,
+            maxBounds: INCAT_MAX_BOUNDS,
+            maxBoundsViscosity: 0.85,
             zoomControl: false,
         });
 
@@ -161,7 +174,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution:
                 "&copy; OpenStreetMap contributors &middot; INCAT Laoag City",
-            maxZoom: 20,
+            maxZoom: INCAT_MAX_ZOOM,
         }).addTo(map);
 
         const hubsLayer = L.layerGroup().addTo(map);
@@ -171,18 +184,66 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         markersLayerRef.current = markersLayer;
         mapInstanceRef.current = map;
 
-        setTimeout(() => {
-            map.invalidateSize();
-        }, 150);
+        // Ensure accurate sizing after animated collapsible toggle
+        const timer1 = window.setTimeout(() => map.invalidateSize(), 120);
+        const timer2 = window.setTimeout(() => map.invalidateSize(), 360);
+
+        const resizeObserver =
+            typeof ResizeObserver !== "undefined"
+                ? new ResizeObserver(() => {
+                      map.invalidateSize({ pan: false });
+                  })
+                : null;
+        resizeObserver?.observe(container);
 
         return () => {
+            window.clearTimeout(timer1);
+            window.clearTimeout(timer2);
+            resizeObserver?.disconnect();
             map.remove();
             mapInstanceRef.current = null;
             markersLayerRef.current = null;
             hubsLayerRef.current = null;
             pickerMarkerRef.current = null;
+            userLocationMarkerRef.current = null;
         };
     }, [interactivePicker]);
+
+    // Helper to resolve coordinates & snap to nearest INCAT hub when within threshold
+    const emitPickedCoordinates = React.useCallback(
+        (rawLat: number, rawLng: number, snapToHub = false) => {
+            const nearest = findNearestCampusHub(rawLat, rawLng, allHubs);
+            const shouldSnap =
+                snapToHub ||
+                (nearest !== null &&
+                    nearest.distanceMeters <= HUB_SNAP_RADIUS_METERS);
+
+            const finalLat =
+                shouldSnap && snapToHub && nearest
+                    ? nearest.hub.lat
+                    : Number(rawLat.toFixed(6));
+            const finalLng =
+                shouldSnap && snapToHub && nearest
+                    ? nearest.hub.lng
+                    : Number(rawLng.toFixed(6));
+
+            if (nearest) {
+                setSnappedHubName(
+                    nearest.distanceMeters <= HUB_SNAP_RADIUS_METERS
+                        ? `${nearest.hub.name} (${nearest.hub.buildingCode})`
+                        : `Near ${nearest.hub.name} (${Math.round(nearest.distanceMeters)}m)`,
+                );
+            }
+
+            onPickCoords?.({
+                lat: finalLat,
+                lng: finalLng,
+                nearestHubId: nearest?.hub.id,
+                nearestHubName: nearest?.hub.name,
+            });
+        },
+        [allHubs, onPickCoords],
+    );
 
     // Handle interactive map click when used inside PostModal
     useEffect(() => {
@@ -190,33 +251,16 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         if (!map || !interactivePicker) return;
 
         const handleMapClick = (e: L.LeafletMouseEvent) => {
-            const { lat, lng } = e.latlng;
-            let nearestHub: CampusLocation | undefined;
-            let minDistance = Number.POSITIVE_INFINITY;
-
-            for (const hub of allHubs) {
-                const d = haversineMeters(lat, lng, hub.lat, hub.lng);
-                if (d < minDistance) {
-                    minDistance = d;
-                    nearestHub = hub;
-                }
-            }
-
-            onPickCoords?.({
-                lat: Number(lat.toFixed(6)),
-                lng: Number(lng.toFixed(6)),
-                nearestHubId: nearestHub?.id,
-                nearestHubName: nearestHub?.name,
-            });
+            emitPickedCoordinates(e.latlng.lat, e.latlng.lng, false);
         };
 
         map.on("click", handleMapClick);
         return () => {
             map.off("click", handleMapClick);
         };
-    }, [interactivePicker, allHubs, onPickCoords]);
+    }, [interactivePicker, emitPickedCoordinates]);
 
-    // Render picked coordinate pin in interactive picker mode
+    // Render draggable picked coordinate pin in interactive picker mode
     useEffect(() => {
         const map = mapInstanceRef.current;
         if (!map) return;
@@ -229,18 +273,31 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             return;
         }
 
+        const nearest = findNearestCampusHub(
+            pickedCoords.lat,
+            pickedCoords.lng,
+            allHubs,
+        );
+        if (nearest) {
+            setSnappedHubName(
+                nearest.distanceMeters <= HUB_SNAP_RADIUS_METERS
+                    ? `${nearest.hub.name} (${nearest.hub.buildingCode})`
+                    : `Near ${nearest.hub.name} (${Math.round(nearest.distanceMeters)}m)`,
+            );
+        }
+
         const icon = L.divIcon({
-            className: "findr-picker-pin",
+            className: "incat-pin-wrapper",
             html: `
-        <div style="
-          display:flex;align-items:center;justify-content:center;
-          width:34px;height:34px;border-radius:9999px;
-          background:#10b981;color:#052e16;
+        <div class="incat-pin-drop" style="
+          width:38px;height:38px;border-radius:9999px;
+          background:#234b38;color:#fafaf9;
           border:3px solid #ffffff;
-          box-shadow:0 8px 20px rgba(16,185,129,0.55);
+          box-shadow:0 8px 20px rgba(35,75,56,0.45);
           transform:translate(-50%,-50%);
-        ">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          cursor:grab;
+        " title="Drag to fine-tune location">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
             <circle cx="12" cy="10" r="3"/>
           </svg>
@@ -250,13 +307,18 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         });
 
         if (!pickerMarkerRef.current) {
-            pickerMarkerRef.current = L.marker(
-                [pickedCoords.lat, pickedCoords.lng],
-                {
-                    icon,
-                    zIndexOffset: 1000,
-                },
-            ).addTo(map);
+            const marker = L.marker([pickedCoords.lat, pickedCoords.lng], {
+                icon,
+                draggable: true,
+                zIndexOffset: 1000,
+            }).addTo(map);
+
+            marker.on("dragend", () => {
+                const pos = marker.getLatLng();
+                emitPickedCoordinates(pos.lat, pos.lng, false);
+            });
+
+            pickerMarkerRef.current = marker;
         } else {
             pickerMarkerRef.current.setLatLng([
                 pickedCoords.lat,
@@ -265,9 +327,9 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         }
 
         map.panTo([pickedCoords.lat, pickedCoords.lng], { animate: true });
-    }, [interactivePicker, pickedCoords]);
+    }, [interactivePicker, pickedCoords, allHubs, emitPickedCoordinates]);
 
-    // Render INCAT campus building hubs
+    // Render INCAT campus building hubs (Distinct style for official drop-off hubs)
     useEffect(() => {
         const hubsLayer = hubsLayerRef.current;
         if (!hubsLayer) return;
@@ -276,58 +338,67 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         if (!showHubLabels) return;
 
         for (const hub of allHubs) {
+            const isOfficialHub = hub.isDropOffHub;
+            const bg = isOfficialHub ? "#234b38" : "#44403c";
+            const border = isOfficialHub ? "#86efac" : "#a8a29e";
+
             const badgeHtml = `
-        <div style="
+        <div class="incat-pin-drop" style="
+          width:auto;height:auto;
           display:inline-flex;align-items:center;gap:4px;
-          padding:2px 7px;border-radius:9999px;
-          background:${hub.isDropOffHub ? "rgba(6,78,59,0.92)" : "rgba(23,23,23,0.88)"};
-          color:${hub.isDropOffHub ? "#a7f3d0" : "#d4d4d8"};
-          border:1px solid ${hub.isDropOffHub ? "rgba(52,211,153,0.45)" : "rgba(82,82,91,0.5)"};
-          font-size:10px;font-weight:600;white-space:nowrap;
-          box-shadow:0 2px 8px rgba(0,0,0,0.35);
+          padding:2px 8px;border-radius:9999px;
+          background:${bg};
+          color:#fafaf9;
+          border:1.5px solid ${border};
+          font-size:10px;font-weight:700;white-space:nowrap;
+          box-shadow:0 2px 8px rgba(0,0,0,0.28);
           transform:translate(-50%, -50%);
           cursor:pointer;
         ">
-          <span style="width:6px;height:6px;border-radius:9999px;background:${
-              hub.isDropOffHub ? "#34d399" : "#a1a1aa"
-          };"></span>
+          ${
+              isOfficialHub
+                  ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
+                  : `<span style="width:5px;height:5px;border-radius:9999px;background:#d6d3d1;"></span>`
+          }
           <span>${hub.buildingCode}</span>
         </div>
       `;
 
             const marker = L.marker([hub.lat, hub.lng], {
                 icon: L.divIcon({
-                    className: "findr-hub-badge",
+                    className: "incat-pin-wrapper",
                     html: badgeHtml,
                     iconSize: [0, 0],
                 }),
             });
 
             marker.bindTooltip(
-                `<strong>${hub.name}</strong><br/><span>${
-                    hub.isDropOffHub
-                        ? "Official Drop-off Hub"
-                        : "Campus Landmark"
-                }</span>`,
-                { direction: "top", offset: [0, -10] },
+                `<div style="font-size:11px;line-height:1.35;">
+                    <strong>${hub.name}</strong><br/>
+                    <span style="opacity:0.85;">${
+                        isOfficialHub
+                            ? "Official Drop-off & Safekeeping Hub"
+                            : "Campus Landmark"
+                    }</span>
+                </div>`,
+                {
+                    direction: "top",
+                    offset: [0, -12],
+                    className: "incat-hub-tooltip",
+                },
             );
 
             if (interactivePicker) {
                 marker.on("click", () => {
-                    onPickCoords?.({
-                        lat: hub.lat,
-                        lng: hub.lng,
-                        nearestHubId: hub.id,
-                        nearestHubName: hub.name,
-                    });
+                    emitPickedCoordinates(hub.lat, hub.lng, true);
                 });
             }
 
             marker.addTo(hubsLayer);
         }
-    }, [allHubs, showHubLabels, interactivePicker, onPickCoords]);
+    }, [allHubs, showHubLabels, interactivePicker, emitPickedCoordinates]);
 
-    // Render Lost / Found / Returned item markers with clustering
+    // Render Lost / Found / Returned item markers with clustering & mount scale-in
     useEffect(() => {
         const markersLayer = markersLayerRef.current;
         if (!markersLayer) return;
@@ -338,9 +409,9 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         for (const cluster of clusteredGroups) {
             const primary = cluster.posts[0];
             const count = cluster.posts.length;
-            const isSelected = cluster.posts.some(
-                (p) => p.id === selectedPostId,
-            );
+            const isSelected =
+                cluster.posts.some((p) => p.id === selectedPostId) ||
+                activeCluster?.key === cluster.key;
 
             const hasLost = cluster.posts.some(
                 (p) => p.type === "lost" && p.status !== "returned",
@@ -349,47 +420,50 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 (p) => p.type === "found" && p.status !== "returned",
             );
 
-            let bg = "#52525b"; // returned / slate
-            let ring = "rgba(161,161,170,0.35)";
+            // Semantic status colors matching 4A tokens
+            let bg = "#4b6356"; // Returned muted green/gray
+            let ring = "rgba(75,99,86,0.35)";
             if (hasLost) {
-                bg = "#e11d48"; // rose-600
-                ring = "rgba(225,29,72,0.4)";
+                bg = "#c23b2b"; // Lost coral/red
+                ring = "rgba(194,59,43,0.4)";
             } else if (hasFound) {
-                bg = "#059669"; // emerald-600
-                ring = "rgba(5,150,105,0.4)";
+                bg = "#c87a19"; // Found warm amber
+                ring = "rgba(200,122,25,0.42)";
             }
 
+            const sizePx = count > 1 ? 36 : 30;
+
             const pinHtml = `
-        <div style="
+        <div class="incat-pin-drop" style="
           position:relative;
           display:flex;align-items:center;justify-content:center;
-          width:${count > 1 ? "36px" : "30px"};
-          height:${count > 1 ? "36px" : "30px"};
+          width:${sizePx}px;
+          height:${sizePx}px;
           border-radius:9999px;
           background:${bg};
           color:#ffffff;
           font-weight:700;font-size:12px;
           border:2.5px solid #ffffff;
-          box-shadow:0 0 0 ${isSelected ? "7px" : "4px"} ${ring}, 0 6px 16px rgba(0,0,0,0.45);
-          transform:translate(-50%, -50%) scale(${isSelected ? "1.15" : "1"});
-          transition:transform 0.2s ease;
+          box-shadow:0 0 0 ${isSelected ? "7px" : "4px"} ${ring}, 0 6px 14px rgba(0,0,0,0.35);
+          transform:translate(-50%, -50%) scale(${isSelected ? "1.18" : "1"});
+          transition:transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
           cursor:pointer;
         ">
           ${
               count > 1
                   ? `<span>${count}</span>`
-                  : `<span style="width:8px;height:8px;border-radius:9999px;background:#fff;"></span>`
+                  : `<span style="width:8px;height:8px;border-radius:9999px;background:#ffffff;"></span>`
           }
         </div>
       `;
 
             const marker = L.marker([cluster.lat, cluster.lng], {
                 icon: L.divIcon({
-                    className: "findr-post-pin",
+                    className: "incat-pin-wrapper",
                     html: pinHtml,
                     iconSize: [0, 0],
                 }),
-                zIndexOffset: isSelected ? 900 : 500,
+                zIndexOffset: isSelected ? 950 : 500,
             });
 
             marker.on("click", () => {
@@ -402,21 +476,30 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 
             marker.bindTooltip(
                 count > 1
-                    ? `${count} items at ${primary.locationName}`
-                    : `${primary.type.toUpperCase()}: ${primary.title}`,
-                { direction: "top", offset: [0, -14] },
+                    ? `${count} notices at ${primary.locationName}`
+                    : `${primary.status === "returned" ? "RETURNED" : primary.type.toUpperCase()}: ${primary.title}`,
+                {
+                    direction: "top",
+                    offset: [0, -14],
+                    className: "incat-hub-tooltip",
+                },
             );
 
             marker.addTo(markersLayer);
         }
-    }, [clusteredGroups, selectedPostId, interactivePicker]);
+    }, [
+        clusteredGroups,
+        selectedPostId,
+        activeCluster?.key,
+        interactivePicker,
+    ]);
 
     const handleResetIncatCenter = () => {
         setGeoError(null);
         mapInstanceRef.current?.flyTo(
             [INCAT_CENTER.lat, INCAT_CENTER.lng],
-            interactivePicker ? 18 : INCAT_CENTER.zoom,
-            { duration: 0.7 },
+            interactivePicker ? INCAT_PICKER_ZOOM : INCAT_DEFAULT_ZOOM,
+            { duration: 0.65 },
         );
     };
 
@@ -443,27 +526,46 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                         radius: 8,
                         color: "#ffffff",
                         weight: 2.5,
-                        fillColor: "#3b82f6",
+                        fillColor: "#1d6fa5",
                         fillOpacity: 1,
                     },
                 )
-                    .bindTooltip("Your current location", { direction: "top" })
+                    .bindTooltip("Your GPS location", {
+                        direction: "top",
+                        className: "incat-hub-tooltip",
+                    })
                     .addTo(map);
 
-                map.flyTo([latitude, longitude], 18, { duration: 0.8 });
+                const distFromCampus = haversineMeters(
+                    latitude,
+                    longitude,
+                    INCAT_CENTER.lat,
+                    INCAT_CENTER.lng,
+                );
 
-                if (interactivePicker && onPickCoords) {
-                    onPickCoords({
-                        lat: Number(latitude.toFixed(6)),
-                        lng: Number(longitude.toFixed(6)),
-                    });
+                if (distFromCampus > 1200) {
+                    setGeoError(
+                        "You appear to be outside INCAT campus bounds; showing closest campus view.",
+                    );
+                } else {
+                    map.flyTo([latitude, longitude], 18, { duration: 0.75 });
+                }
+
+                if (interactivePicker) {
+                    emitPickedCoordinates(latitude, longitude, false);
                 }
             },
-            () => {
+            (err) => {
                 setLocatingUser(false);
-                setGeoError(
-                    "Could not access GPS location. Check browser permissions.",
-                );
+                if (err.code === err.PERMISSION_DENIED) {
+                    setGeoError(
+                        "Location permission denied. You can still tap any building hub on the map.",
+                    );
+                } else {
+                    setGeoError(
+                        "Could not determine GPS location. Try tapping a campus building instead.",
+                    );
+                }
             },
             { enableHighAccuracy: true, timeout: 8000 },
         );
@@ -474,30 +576,56 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             ? activeCluster.posts[activePostIndex]
             : null;
 
+    const lostCount = useMemo(
+        () =>
+            allPosts.filter((p) => p.type === "lost" && p.status !== "returned")
+                .length,
+        [allPosts],
+    );
+    const foundCount = useMemo(
+        () =>
+            allPosts.filter(
+                (p) => p.type === "found" && p.status !== "returned",
+            ).length,
+        [allPosts],
+    );
+    const returnedCount = useMemo(
+        () => allPosts.filter((p) => p.status === "returned").length,
+        [allPosts],
+    );
+
     return (
         <div
-            className={`relative overflow-hidden rounded-2xl border border-neutral-800/90 bg-neutral-950 shadow-xl ${className}`}
+            className={`theme-surface relative overflow-hidden rounded-2xl border border-border bg-surface shadow-md ${
+                theme === "dark" ? "incat-osm-dark-raster" : ""
+            } ${className}`}
         >
-            {/* Top Floating Bar */}
+            {/* Top Floating Map Controls */}
             <div className="pointer-events-none absolute top-3 right-3 left-3 z-400 flex flex-wrap items-center justify-between gap-2">
-                <div className="pointer-events-auto inline-flex items-center gap-2 rounded-xl border border-neutral-800/90 bg-neutral-950/90 px-3 py-1.5 text-xs text-neutral-200 backdrop-blur-md">
-                    <Compass className="h-3.5 w-3.5 text-emerald-400" />
-                    <span className="font-semibold">INCAT Campus Map</span>
-                    <span className="hidden text-neutral-400 sm:inline">
-                        &middot; P. Gomez St., Laoag City
-                    </span>
+                <div className="pointer-events-auto inline-flex items-center gap-2 rounded-xl border border-border bg-surface/92 px-3 py-1.5 text-xs font-medium text-text shadow-sm backdrop-blur-md">
+                    <Compass className="h-3.5 w-3.5 text-accent" />
+                    <span className="font-semibold">INCAT Campus</span>
+                    {interactivePicker && snappedHubName ? (
+                        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                            {snappedHubName}
+                        </span>
+                    ) : (
+                        <span className="hidden text-muted sm:inline">
+                            &middot; P. Gomez St., Laoag City
+                        </span>
+                    )}
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <button
                         type="button"
                         onClick={() => setShowHubLabels((prev) => !prev)}
-                        className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium backdrop-blur-md transition-colors ${
+                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-md transition-colors cursor-pointer ${
                             showHubLabels
-                                ? "border-emerald-700/60 bg-emerald-950/85 text-emerald-200"
-                                : "border-neutral-800 bg-neutral-950/85 text-neutral-300 hover:bg-neutral-900"
+                                ? "border-accent bg-accent text-accent-fg"
+                                : "border-border bg-surface/92 text-text-secondary hover:bg-subtle"
                         }`}
-                        title="Toggle INCAT building hub labels"
+                        title="Toggle INCAT building hub badges"
                     >
                         <Layers className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Hubs</span>
@@ -507,11 +635,11 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                         type="button"
                         onClick={handleLocateMe}
                         disabled={locatingUser}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-950/90 px-2.5 py-1.5 text-xs font-medium text-neutral-200 backdrop-blur-md transition-colors hover:border-neutral-700 hover:bg-neutral-900 disabled:opacity-50"
-                        title="Center on my GPS location"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-xs font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle disabled:opacity-50 cursor-pointer"
+                        title="Locate me via GPS"
                     >
                         <LocateFixed
-                            className={`h-3.5 w-3.5 text-emerald-400 ${
+                            className={`h-3.5 w-3.5 text-accent ${
                                 locatingUser ? "animate-spin" : ""
                             }`}
                         />
@@ -523,163 +651,218 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                     <button
                         type="button"
                         onClick={handleResetIncatCenter}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-950/90 px-2.5 py-1.5 text-xs font-medium text-neutral-200 backdrop-blur-md transition-colors hover:border-neutral-700 hover:bg-neutral-900"
-                        title="Reset view to INCAT Campus"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border bg-surface/92 px-2.5 py-1.5 text-xs font-semibold text-text shadow-sm backdrop-blur-md transition-colors hover:bg-subtle cursor-pointer"
+                        title="Reset view to INCAT Campus center"
                     >
-                        <Navigation className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>INCAT Center</span>
+                        <Navigation className="h-3.5 w-3.5 text-accent" />
+                        <span>Reset view</span>
                     </button>
                 </div>
             </div>
 
-            {/* Map Canvas */}
+            {/* Leaflet Map Canvas */}
             <div
                 ref={mapContainerRef}
-                className={`w-full ${heightClassName} bg-neutral-900`}
+                className={`w-full ${heightClassName} bg-subtle`}
                 aria-label="INCAT Campus interactive map"
             />
 
-            {/* Legend / Interactive Picker Helper */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-800/80 bg-neutral-950 px-3.5 py-2 text-xs text-neutral-400">
+            {/* Quick-Snap Building Hub Pills in Interactive Picker Mode */}
+            {interactivePicker && (
+                <div className="flex items-center gap-1.5 overflow-x-auto border-t border-border bg-subtle/60 px-3 py-2 text-xs">
+                    <span className="shrink-0 font-semibold text-muted">
+                        Snap to hub:
+                    </span>
+                    {allHubs.slice(0, 7).map((hub) => (
+                        <button
+                            key={hub.id}
+                            type="button"
+                            onClick={() =>
+                                emitPickedCoordinates(hub.lat, hub.lng, true)
+                            }
+                            className="shrink-0 rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent cursor-pointer"
+                        >
+                            {hub.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Bottom Legend / Picker Helper Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-3.5 py-2.5 text-xs text-muted">
                 {interactivePicker ? (
-                    <div className="flex items-center gap-2 text-emerald-300">
-                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <div className="flex items-center gap-2 font-medium text-text-secondary">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-accent" />
                         <span>
-                            Tap anywhere on the INCAT map or click a building
-                            badge to pin the exact spot.
+                            Tap anywhere on campus, drag the pin, or tap a
+                            building badge to snap.
                         </span>
                     </div>
                 ) : (
-                    <div className="flex flex-wrap items-center gap-3">
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2.5 w-2.5 rounded-full bg-rose-600" />
-                            Lost (
-                            {
-                                allPosts.filter(
-                                    (p) =>
-                                        p.type === "lost" &&
-                                        p.status !== "returned",
-                                ).length
-                            }
-                            )
+                    <div className="flex flex-wrap items-center gap-3.5">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
+                            <span className="h-2.5 w-2.5 rounded-full bg-lost" />
+                            Lost ({lostCount})
                         </span>
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
-                            Found (
-                            {
-                                allPosts.filter(
-                                    (p) =>
-                                        p.type === "found" &&
-                                        p.status !== "returned",
-                                ).length
-                            }
-                            )
+                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
+                            <span className="h-2.5 w-2.5 rounded-full bg-found" />
+                            Found ({foundCount})
                         </span>
-                        <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2.5 w-2.5 rounded-full bg-neutral-500" />
-                            Returned (
-                            {
-                                allPosts.filter((p) => p.status === "returned")
-                                    .length
-                            }
-                            )
+                        <span className="inline-flex items-center gap-1.5 font-medium text-text-secondary">
+                            <span className="h-2.5 w-2.5 rounded-full bg-returned" />
+                            Returned ({returnedCount})
                         </span>
-                        <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                        <span className="inline-flex items-center gap-1 font-semibold text-accent">
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            Drop-off Hubs
+                            Official Drop-off Hubs
                         </span>
                     </div>
                 )}
 
-                {geoError && <span className="text-rose-400">{geoError}</span>}
+                {geoError && (
+                    <span className="font-medium text-danger">{geoError}</span>
+                )}
             </div>
 
-            {/* Slide-Up Detail Card on Pin Click */}
-            {!interactivePicker && activePost && activeCluster && (
-                <div className="absolute right-3 bottom-12 left-3 z-450 max-w-md rounded-2xl border border-neutral-700/90 bg-neutral-950/95 p-3.5 shadow-2xl backdrop-blur-md sm:left-4">
-                    <div className="flex items-start justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            <span
-                                className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
-                                    activePost.status === "returned"
-                                        ? "bg-neutral-800 text-neutral-300"
-                                        : activePost.type === "lost"
-                                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                                          : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                }`}
-                            >
-                                {activePost.status === "returned"
-                                    ? "Returned"
-                                    : activePost.type.toUpperCase()}
-                            </span>
-                            <span className="text-xs text-neutral-400">
-                                {formatRelativeTime(activePost.createdAt)}
-                            </span>
-                            {activeCluster.posts.length > 1 && (
-                                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300">
-                                    Item {activePostIndex + 1} of{" "}
-                                    {activeCluster.posts.length} here
+            {/* Slide-Up Detail Card (Bottom Sheet on Mobile, Floating Side Panel on Desktop) */}
+            <AnimatePresence>
+                {!interactivePicker && activePost && activeCluster && (
+                    <motion.div
+                        key={activeCluster.key}
+                        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                        transition={SPRING_SHEET}
+                        className="theme-surface absolute right-3 bottom-12 left-3 z-450rounded-2xl border border-border-strong bg-surface/98 p-3.5 shadow-lg backdrop-blur-md sm:right-auto sm:left-4 sm:w-96"
+                    >
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <StatusBadge
+                                    type={activePost.type}
+                                    status={activePost.status}
+                                />
+                                <span className="text-[11px] text-muted">
+                                    {formatRelativeTime(activePost.createdAt)}
                                 </span>
-                            )}
+                                {activeCluster.posts.length > 1 && (
+                                    <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-semibold text-text-secondary">
+                                        {activePostIndex + 1} of{" "}
+                                        {activeCluster.posts.length} here
+                                    </span>
+                                )}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveCluster(null)}
+                                aria-label="Close pin preview"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted hover:bg-subtle hover:text-text cursor-pointer"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={() => setActiveCluster(null)}
-                            aria-label="Close pin preview"
-                            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-                        >
-                            <X className="h-4 w-4" />
-                        </button>
-                    </div>
+                        {/* Thumbnail + Title + Summary */}
+                        <div className="mt-2.5 flex gap-3">
+                            <div className="h-16 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-subtle">
+                                {activePost.imageUrls.length > 0 ? (
+                                    <img
+                                        src={activePost.imageUrls[0]}
+                                        alt={activePost.title}
+                                        loading="lazy"
+                                        decoding="async"
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-muted">
+                                        {getCategoryIcon(
+                                            activePost.category,
+                                            24,
+                                        )}
+                                    </div>
+                                )}
+                            </div>
 
-                    <h4 className="mt-1.5 font-semibold text-neutral-100">
-                        {activePost.title}
-                    </h4>
-                    <p className="mt-1 line-clamp-2 text-xs text-neutral-400">
-                        {activePost.description}
-                    </p>
-
-                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-neutral-800/80 pt-2.5 text-xs">
-                        <span className="inline-flex items-center gap-1 text-neutral-300">
-                            <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-                            {activePost.locationName}
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                            {activeCluster.posts.length > 1 && (
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setActivePostIndex(
-                                            (prev) =>
-                                                (prev + 1) %
-                                                activeCluster.posts.length,
-                                        )
-                                    }
-                                    className="rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
-                                >
-                                    Next item
-                                </button>
-                            )}
-
-                            {(onSelectPost || onSelectItem) && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        onSelectPost?.(activePost);
-                                        onSelectItem?.(activePost);
-                                    }}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
-                                >
-                                    <span>Details</span>
-                                    <ExternalLink className="h-3 w-3" />
-                                </button>
-                            )}
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[11px] font-medium text-muted">
+                                    {formatCategoryLabel(activePost.category)}
+                                </div>
+                                <h4 className="font-display truncate text-sm font-bold text-text">
+                                    {activePost.title}
+                                </h4>
+                                <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">
+                                    {activePost.description}
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            )}
+
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs">
+                            <span className="inline-flex items-center gap-1 truncate font-medium text-text-secondary">
+                                <MapPin className="h-3.5 w-3.5 shrink-0 text-accent" />
+                                <span className="truncate">
+                                    {activePost.locationName}
+                                </span>
+                            </span>
+
+                            <div className="flex shrink-0 items-center gap-1.5">
+                                {activeCluster.posts.length > 1 && (
+                                    <div className="inline-flex items-center rounded-lg border border-border bg-subtle p-0.5">
+                                        <button
+                                            type="button"
+                                            aria-label="Previous item at this location"
+                                            onClick={() =>
+                                                setActivePostIndex(
+                                                    (prev) =>
+                                                        (prev -
+                                                            1 +
+                                                            activeCluster.posts
+                                                                .length) %
+                                                        activeCluster.posts
+                                                            .length,
+                                                )
+                                            }
+                                            className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
+                                        >
+                                            <ChevronLeft className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            aria-label="Next item at this location"
+                                            onClick={() =>
+                                                setActivePostIndex(
+                                                    (prev) =>
+                                                        (prev + 1) %
+                                                        activeCluster.posts
+                                                            .length,
+                                                )
+                                            }
+                                            className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text cursor-pointer"
+                                        >
+                                            <ChevronRight className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {(onSelectPost || onSelectItem) && (
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={() => {
+                                            onSelectPost?.(activePost);
+                                            onSelectItem?.(activePost);
+                                        }}
+                                        rightIcon={
+                                            <ExternalLink className="h-3 w-3" />
+                                        }
+                                    >
+                                        View
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
