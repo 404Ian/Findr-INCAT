@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import {
     useCallback,
     useEffect,
@@ -23,7 +24,6 @@ import {
     Sun,
     X,
 } from "lucide-react";
-import { CampusMap } from "./components/CampusMap";
 import {
     CATEGORY_OPTIONS,
     EmptyTrayIllustration,
@@ -66,6 +66,8 @@ import type {
     PostStatus,
     PostType,
 } from "./types";
+
+const LazyCampusMap = lazy(() => import("./components/CampusMap"));
 
 /**
  * Formats an ISO date into a clean relative string ("Just now", "2h ago", "3d ago")
@@ -572,12 +574,21 @@ function FindrShell() {
                                                     &middot; Live Pins
                                                 </span>
                                             </div>
-                                            <CampusMap
-                                                posts={posts}
-                                                onSelectPost={(p) =>
-                                                    setSelectedPost(p)
+                                            <Suspense
+                                                fallback={
+                                                    <Skeleton className="h-115 w-full rounded-2xl" />
                                                 }
-                                            />
+                                            >
+                                                <LazyCampusMap
+                                                    posts={posts}
+                                                    selectedPostId={
+                                                        selectedPost?.id ?? null
+                                                    }
+                                                    onSelectPost={(p) =>
+                                                        setSelectedPost(p)
+                                                    }
+                                                />
+                                            </Suspense>
                                         </div>
                                     </motion.section>
                                 )}
