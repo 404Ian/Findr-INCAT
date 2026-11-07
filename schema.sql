@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS wall_posts;
 
 DROP TABLE IF EXISTS items;
 
-DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS users; 
 
 CREATE TABLE
     users (
