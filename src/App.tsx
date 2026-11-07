@@ -351,21 +351,12 @@ function FindrShell() {
                 <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
                     {/* Brand Identity */}
                     <div className="flex items-center gap-3">
-                        <div className="font-display flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-lg font-bold text-accent-fg shadow-sm">
-                            F
-                        </div>
                         <div>
                             <div className="flex items-center gap-2">
                                 <span className="font-display text-base font-bold tracking-tight text-text">
                                     Findr INCAT
                                 </span>
-                                <span className="rounded-full border border-accent/25 bg-accent-soft px-2 py-0.5 text-[10px] font-bold tracking-wide text-accent uppercase">
-                                    Laoag
-                                </span>
                             </div>
-                            <p className="hidden text-[11px] text-muted sm:block">
-                                {t.appSubtitle}
-                            </p>
                         </div>
                     </div>
 

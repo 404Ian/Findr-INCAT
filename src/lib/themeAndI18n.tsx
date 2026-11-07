@@ -14,7 +14,6 @@ export type ThemeMode = "light" | "dark" | "system";
 const TRANSLATIONS: Record<
     LanguageCode,
     {
-        appSubtitle: string;
         postItem: string;
         tabWall: string;
         tabMyItems: string;
@@ -46,7 +45,6 @@ const TRANSLATIONS: Record<
     }
 > = {
     en: {
-        appSubtitle: "Ilocos Norte College of Arts & Trades · Laoag City",
         postItem: "Post Item",
         tabWall: "Wall",
         tabMyItems: "My items",
@@ -80,10 +78,9 @@ const TRANSLATIONS: Record<
         themeDark: "Switch to dark mode",
     },
     tl: {
-        appSubtitle: "Ilocos Norte College of Arts & Trades · Lungsod ng Laoag",
         postItem: "Mag-post",
         tabWall: "Board",
-        tabMyItems: "Gamit Ko",
+        tabMyItems: "Mga Gamit",
         tabScan: "I-scan",
         showMap: "Ipakita ang Mapa",
         hideMap: "Itago ang Mapa",
@@ -113,11 +110,10 @@ const TRANSLATIONS: Record<
         themeDark: "Gawing madilim",
     },
     ilo: {
-        appSubtitle: "Ilocos Norte College of Arts & Trades · Siudad ti Laoag",
-        postItem: "I-post",
+        postItem: "Ag post",
         tabWall: "Board",
         tabMyItems: "Alikamen",
-        tabScan: "I-scan",
+        tabScan: "Ag Scan",
         showMap: "Ipakita ti Mapa",
         hideMap: "Ilemmeng ti Mapa",
         heroBadge: "INCAT Lost & Found Board",

@@ -954,7 +954,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                             e.target.value,
                                                         )
                                                     }
-                                                    placeholder="Enter campus code (e.g., INCAT2026)"
+                                                    placeholder="Enter campus code"
                                                 />
                                             </div>
                                         )}

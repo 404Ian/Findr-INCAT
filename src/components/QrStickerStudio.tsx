@@ -1286,7 +1286,7 @@ export const QrStickerStudio: React.FC<QrStickerStudioProps> = ({
                                     onChange={(e) =>
                                         setCampusCode(e.target.value)
                                     }
-                                    placeholder="Enter campus code (e.g., INCAT2026)"
+                                    placeholder="Enter campus code"
                                 />
                             </div>
                         )}
