@@ -32,26 +32,22 @@ export const EASE_OUT_NORMAL: Transition = {
 };
 
 export const fadeInUpVariants: Variants = {
-    hidden: { opacity: 0, y: 10 },
+    hidden: { opacity: 1, y: 0 },
     visible: {
         opacity: 1,
         y: 0,
         transition: EASE_OUT_NORMAL,
     },
     exit: {
-        opacity: 0,
-        y: -6,
+        opacity: 1,
+        y: 0,
         transition: EASE_OUT_FAST,
     },
 };
 
 export const staggerContainerVariants: Variants = {
-    hidden: { opacity: 0 },
+    hidden: { opacity: 1 },
     visible: {
         opacity: 1,
-        transition: {
-            staggerChildren: 0.045,
-            delayChildren: 0.02,
-        },
     },
 };

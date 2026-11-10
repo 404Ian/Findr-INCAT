@@ -53,8 +53,6 @@ import { api } from "./lib/api";
 import {
     SPRING_GENTLE,
     SPRING_SNAPPY,
-    fadeInUpVariants,
-    staggerContainerVariants,
 } from "./lib/motion";
 import { ThemeAndI18nProvider, useThemeAndI18n } from "./lib/themeAndI18n";
 import { useDeepLinkRoute } from "./lib/useDeepLinkRoute";
@@ -498,17 +496,10 @@ function FindrShell() {
 
             {/* Main Content Container */}
             <main className="mx-auto max-w-7xl px-4 pt-5 sm:px-6 sm:pt-7">
-                <AnimatePresence initial={false}>
+                <>
                     {/* TAB 1: CAMPUS WALL */}
                     {activeTab === "wall" && (
-                        <motion.div
-                            key="tab-wall"
-                            variants={fadeInUpVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit="exit"
-                            className="space-y-6"
-                        >
+                        <div className="space-y-6">
                             {/* Notice-Board Hero Section */}
                             <section className="theme-surface relative overflow-hidden rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
                                 <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
@@ -952,20 +943,12 @@ function FindrShell() {
                                 />
                             ) : (
                                 <>
-                                    <motion.div
-                                        variants={staggerContainerVariants}
-                                        initial="hidden"
-                                        animate="visible"
-                                        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-                                    >
+                                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                                         {posts.map((post) => {
                                             const isReturned =
                                                 post.status === "returned";
                                             return (
-                                                <motion.article
-                                                    key={post.id}
-                                                    variants={fadeInUpVariants}
-                                                >
+                                                <article key={post.id}>
                                                     <div
                                                         role="button"
                                                         tabIndex={0}
@@ -1061,10 +1044,10 @@ function FindrShell() {
                                                             </span>
                                                         </div>
                                                     </div>
-                                                </motion.article>
+                                                </article>
                                             );
                                         })}
-                                    </motion.div>
+                                    </div>
 
                                     {/* Load More / Pagination */}
                                     {nextCursor && (
@@ -1085,45 +1068,33 @@ function FindrShell() {
                                     )}
                                 </>
                             )}
-                        </motion.div>
+                        </div>
                     )}
 
                     {/* TAB 2: MY ITEMS (QR TAG STUDIO) */}
                     {activeTab === "my-items" && (
-                        <motion.div
-                            key="tab-my-items"
-                            variants={fadeInUpVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit="exit"
-                        >
+                        <div>
                             <QrStickerStudio
                                 onPreviewTagCode={(code) => {
                                     setScanInitialCode(code);
                                     setActiveTab("scan");
                                 }}
                             />
-                        </motion.div>
+                        </div>
                     )}
 
                     {/* TAB 3: SCANNER */}
                     {activeTab === "scan" && (
-                        <motion.div
-                            key="tab-scan"
-                            variants={fadeInUpVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit="exit"
-                        >
+                        <div>
                             <QrScanSimulator
                                 initialCode={scanInitialCode}
                                 onCodeResolved={(code) =>
                                     setScanInitialCode(code)
                                 }
                             />
-                        </motion.div>
+                        </div>
                     )}
-                </AnimatePresence>
+                </>
             </main>
 
             {/* Mobile Bottom Navigation Bar with Prominent Post Button & Safe-Area Padding */}

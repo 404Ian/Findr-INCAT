@@ -1,6 +1,4 @@
 import React from "react";
-import { motion } from "motion/react";
-import { SPRING_SNAPPY } from "../lib/motion";
 import {
     CAMPUS_HUB_NAMES,
     type CampusHubName,
@@ -163,10 +161,8 @@ export const ContactMatrix: React.FC<ContactMatrixProps> = ({
                             : "border-border-strong bg-subtle"
                     }`}
                 >
-                    <motion.span
-                        layout
-                        transition={SPRING_SNAPPY}
-                        className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm ${
+                    <span
+                        className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                             value.relayMode ? "translate-x-6" : "translate-x-1"
                         }`}
                     />
