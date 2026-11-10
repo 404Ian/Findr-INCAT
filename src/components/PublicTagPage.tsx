@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import {
     AlertOctagon,
@@ -27,6 +27,7 @@ import { api, ApiError } from "../lib/api";
 import { SPRING_SNAPPY, fadeInUpVariants } from "../lib/motion";
 import type { ContactMethod, PublicTagView } from "../types";
 import CategoryArt, { formatCategoryLabel } from "./CategoryArt";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "./TurnstileWidget";
 import {
     Button,
     Card,
@@ -96,6 +97,9 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
         kind: "not_found" | "rate_limited" | "generic";
         message: string;
     } | null>(null);
+
+    const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+    const [turnstileToken, setTurnstileToken] = useState<string>("");
 
     const [revealedMethods, setRevealedMethods] = useState<
         ContactMethod[] | null
@@ -209,13 +213,24 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
         );
     };
 
+    const resetTurnstile = () => {
+        setTurnstileToken("");
+        turnstileRef.current?.reset();
+    };
+
     const handleRevealContacts = async () => {
+        if (!turnstileToken) {
+            setRevealError(
+                "Please wait for the human verification check below to complete.",
+            );
+            return;
+        }
         setRevealing(true);
         setRevealError(null);
         try {
             const res = await api.revealPublicTagContacts(
                 cleanCode,
-                "dev-bypass-token",
+                turnstileToken,
             );
             setRevealedMethods(res.visibleMethods);
         } catch (err: unknown) {
@@ -226,29 +241,35 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             );
         } finally {
             setRevealing(false);
+            resetTurnstile();
         }
     };
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!messageBody.trim()) return;
+        if (!turnstileToken) {
+            setMsgError(
+                "Please wait for the human verification check to complete.",
+            );
+            return;
+        }
         setSendingMsg(true);
         setMsgError(null);
-
         try {
             await api.sendFinderMessage(cleanCode, {
                 body: messageBody.trim(),
                 finderContact: finderContact.trim() || undefined,
                 foundAtHub: foundAtHub || undefined,
                 approxLocation: shareApproxLocation ? approxCoords : null,
-                turnstileToken: "dev-bypass-token",
+                turnstileToken,
             });
             setMsgSent(true);
             setMessageBody("");
         } catch (err: unknown) {
             if (err instanceof ApiError && err.status === 429) {
                 setMsgError(
-                    "Slow down a bit—too many messages sent recently. Please wait a moment.",
+                    "Slow down a bit too many messages sent recently. Please wait a moment.",
                 );
             } else {
                 setMsgError(
@@ -259,6 +280,7 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
             }
         } finally {
             setSendingMsg(false);
+            resetTurnstile();
         }
     };
 
@@ -567,13 +589,14 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                                 variant="secondary"
                                 size="lg"
                                 loading={revealing}
+                                disabled={!turnstileToken}
                                 onClick={handleRevealContacts}
                                 leftIcon={
                                     <ShieldCheck className="h-4 w-4 text-accent" />
                                 }
                                 className="w-full border-accent/40 bg-accent-soft text-accent hover:bg-accent hover:text-accent-fg"
                             >
-                                Tap to Reveal Owner Contact Buttons
+                                Tap to reveal contacts
                             </Button>
                             <p className="mt-1.5 text-center text-[11px] text-muted">
                                 Protected by anti-scraper verification to keep
@@ -750,13 +773,25 @@ export const PublicTagPage: React.FC<PublicTagPageProps> = ({
                             variant="primary"
                             size="lg"
                             loading={sendingMsg}
-                            disabled={!messageBody.trim()}
+                            disabled={!messageBody.trim() || !turnstileToken}
                             leftIcon={<Send className="h-4 w-4" />}
                             className="w-full"
                         >
                             Send Message to Owner
                         </Button>
                     </form>
+                )}
+
+                {(!msgSent ||
+                    (tag.visibleMethodsCount > 0 && !revealedMethods)) && (
+                    <div className="mt-4">
+                        <TurnstileWidget
+                            ref={turnstileRef}
+                            action="finder_interact"
+                            onVerify={(token) => setTurnstileToken(token)}
+                            onExpire={() => setTurnstileToken("")}
+                        />
+                    </div>
                 )}
             </Card>
 

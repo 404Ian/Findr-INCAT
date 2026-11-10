@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     AlertTriangle,
@@ -42,26 +42,19 @@ import type {
 } from "../types";
 import { CampusMap } from "./CampusMap";
 import { ContactMatrix, DEFAULT_CONTACT_CONFIG } from "./ContactMatrix";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "./TurnstileWidget";
 import { Button, Input, Select, Textarea } from "./ui/primitives";
 
 export interface PostModalProps {
-    /** Whether the modal is open */
     isOpen?: boolean;
-    /** Legacy alias if App.tsx passes `open` */
     open?: boolean;
     onClose: () => void;
-    /** Callback when a post is created or updated */
     onCreated?: (post: Post, editKey?: string) => void;
-    /** Legacy alias if App.tsx passes `onSubmit` or `onPostCreated` */
     onSubmit?: (post: Post) => void;
     onPostCreated?: (post: Post) => void;
-    /** Optional initial post when editing an existing post */
     editingPost?: Post | null;
-    /** Optional list of locations from App.tsx */
     locations?: CampusLocation[];
-    /** Optional user tags to link to a lost post */
     myTags?: Tag[];
-    /** Optional default post type */
     defaultType?: PostType;
 }
 
@@ -204,7 +197,9 @@ export const PostModal: React.FC<PostModalProps> = ({
     );
     const [claimAnswer, setClaimAnswer] = useState<string>("");
 
-    // Campus code & submission state
+    // Turnstile, Campus code & submission state
+    const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+    const [turnstileToken, setTurnstileToken] = useState<string>("");
     const [campusCode, setCampusCode] = useState<string>(getStoredCampusCode());
     const [needsCampusCode, setNeedsCampusCode] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -220,6 +215,7 @@ export const PostModal: React.FC<PostModalProps> = ({
         setStep(1);
         setErrorMsg(null);
         setCreatedResult(null);
+        setTurnstileToken("");
         if (editingPost) {
             setType(editingPost.type);
             setTitle(editingPost.title);
@@ -254,12 +250,10 @@ export const PostModal: React.FC<PostModalProps> = ({
             setErrorMsg("You can attach up to 3 photos per post.");
             return;
         }
-
         try {
             setUploadingImage(true);
             const compressed = await compressImageBeforeUpload(file);
             const localPreview = URL.createObjectURL(compressed);
-
             try {
                 const uploaded = await api.uploadImage(compressed);
                 setImageKeys((prev) => [...prev, uploaded.key]);
@@ -340,6 +334,13 @@ export const PostModal: React.FC<PostModalProps> = ({
             return;
         }
 
+        if (!editingPost && !turnstileToken) {
+            setErrorMsg(
+                "Please wait for the human verification check to finish.",
+            );
+            return;
+        }
+
         if (campusCode.trim()) {
             setStoredCampusCode(campusCode.trim());
         }
@@ -366,7 +367,7 @@ export const PostModal: React.FC<PostModalProps> = ({
             occurredAt: occurredAt
                 ? new Date(occurredAt).toISOString()
                 : new Date().toISOString(),
-            turnstileToken: "dev-bypass-token",
+            turnstileToken: editingPost ? undefined : turnstileToken,
         };
 
         try {
@@ -386,6 +387,10 @@ export const PostModal: React.FC<PostModalProps> = ({
                 onPostCreated?.(res.post);
             }
         } catch (err) {
+            // Single-use token: always reset widget so retry gets a fresh token
+            setTurnstileToken("");
+            turnstileRef.current?.reset();
+
             if (
                 err instanceof ApiError &&
                 err.code === "CAMPUS_CODE_REQUIRED"
@@ -459,7 +464,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                     </p>
                                 )}
                             </div>
-
                             <button
                                 type="button"
                                 onClick={onClose}
@@ -541,7 +545,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                         exit="exit"
                                         className="space-y-4"
                                     >
-                                        {/* Lost vs Found Toggle */}
                                         <div className="grid grid-cols-2 gap-3">
                                             <button
                                                 type="button"
@@ -560,7 +563,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     hubs to watch for your item
                                                 </span>
                                             </button>
-
                                             <button
                                                 type="button"
                                                 onClick={() => setType("found")}
@@ -580,7 +582,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             </button>
                                         </div>
 
-                                        {/* Title & Category */}
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                             <div className="sm:col-span-2">
                                                 <Input
@@ -599,7 +600,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     }
                                                 />
                                             </div>
-
                                             <Select
                                                 id="post-category"
                                                 label="Category *"
@@ -622,7 +622,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             </Select>
                                         </div>
 
-                                        {/* Description */}
                                         <Textarea
                                             id="post-description"
                                             label="Description & Distinguishing Marks *"
@@ -640,7 +639,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             }
                                         />
 
-                                        {/* Photo Upload with Drag-and-Drop & Auto-Compression */}
                                         <div>
                                             <div className="mb-1.5 flex items-center justify-between text-xs">
                                                 <span className="font-semibold text-text">
@@ -652,7 +650,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     attached
                                                 </span>
                                             </div>
-
                                             <div className="flex flex-wrap items-center gap-3">
                                                 {imagePreviews.map(
                                                     (src, idx) => (
@@ -680,7 +677,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                         </div>
                                                     ),
                                                 )}
-
                                                 {imagePreviews.length < 3 && (
                                                     <label
                                                         onDragOver={(e) => {
@@ -723,7 +719,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             </div>
                                         </div>
 
-                                        {/* Optional Link to Existing Findr QR Tag */}
                                         {myTags.length > 0 && (
                                             <div className="rounded-xl border border-border bg-subtle/50 p-3.5">
                                                 <label
@@ -795,7 +790,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     ),
                                                 )}
                                             </Select>
-
                                             <Input
                                                 id="post-occurred-at"
                                                 type="datetime-local"
@@ -809,7 +803,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             />
                                         </div>
 
-                                        {/* Interactive INCAT Map Picker */}
                                         <div>
                                             <div className="mb-1.5 flex items-center justify-between text-xs">
                                                 <span className="inline-flex items-center gap-1 font-semibold text-text">
@@ -825,7 +818,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     {coords.lng.toFixed(5)}
                                                 </span>
                                             </div>
-
                                             <CampusMap
                                                 interactivePicker
                                                 locations={
@@ -849,7 +841,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                     </motion.div>
                                 )}
 
-                                {/* STEP 3: Contact Matrix & Optional Claim Verification */}
+                                {/* STEP 3: Contact Matrix, Optional Claim Verification & Turnstile */}
                                 {step === 3 && (
                                     <motion.div
                                         key="post-step-3"
@@ -897,7 +889,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                         className="mt-1 h-4 w-4 rounded border-border-strong accent-accent"
                                                     />
                                                 </div>
-
                                                 {enableClaimQuestion && (
                                                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                                                         <Input
@@ -914,7 +905,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                             }
                                                             placeholder="e.g., What sticker is on the back cover?"
                                                         />
-
                                                         <Input
                                                             id="claim-answer"
                                                             label="Expected Answer (case-insensitive) *"
@@ -958,10 +948,23 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                 />
                                             </div>
                                         )}
+
+                                        {!editingPost && (
+                                            <TurnstileWidget
+                                                ref={turnstileRef}
+                                                action="create_post"
+                                                onVerify={(token) =>
+                                                    setTurnstileToken(token)
+                                                }
+                                                onExpire={() =>
+                                                    setTurnstileToken("")
+                                                }
+                                            />
+                                        )}
                                     </motion.div>
                                 )}
 
-                                {/* STEP 4: One-Time Capability Key Receipt with Animated Checkmark */}
+                                {/* STEP 4: One-Time Capability Key Receipt */}
                                 {step === 4 && createdResult && (
                                     <motion.div
                                         key="post-step-4"
@@ -1002,8 +1005,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                 <KeyRound className="h-4 w-4 shrink-0" />
                                                 <span>
                                                     Save your recovery link or
-                                                    file (shown once — no
-                                                    password reset)
+                                                    file (shown once)
                                                 </span>
                                             </div>
                                             <p className="mt-1 text-text-secondary">
@@ -1012,7 +1014,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                 this link or recovery JSON to
                                                 mark the item as returned.
                                             </p>
-
                                             <div className="mt-3 flex items-center gap-2">
                                                 <input
                                                     type="text"
@@ -1038,7 +1039,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                         : "Copy Link"}
                                                 </Button>
                                             </div>
-
                                             <div className="mt-3">
                                                 <Button
                                                     variant="secondary"
@@ -1066,7 +1066,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                         Cancel
                                     </Button>
                                 )}
-
                                 {step > 1 && step < 4 && (
                                     <Button
                                         variant="secondary"
@@ -1083,7 +1082,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                         Back
                                     </Button>
                                 )}
-
                                 {step < 3 && (
                                     <Button
                                         variant="primary"
@@ -1103,12 +1101,14 @@ export const PostModal: React.FC<PostModalProps> = ({
                                         Next
                                     </Button>
                                 )}
-
                                 {step === 3 && (
                                     <Button
                                         type="submit"
                                         variant="primary"
                                         loading={submitting}
+                                        disabled={
+                                            !editingPost && !turnstileToken
+                                        }
                                         className="ml-auto"
                                     >
                                         {editingPost
@@ -1116,7 +1116,6 @@ export const PostModal: React.FC<PostModalProps> = ({
                                             : "Publish to INCAT Wall"}
                                     </Button>
                                 )}
-
                                 {step === 4 && (
                                     <Button
                                         variant="primary"

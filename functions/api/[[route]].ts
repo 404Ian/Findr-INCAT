@@ -15,6 +15,7 @@ import type {
 export interface Env {
     DB: D1Database;
     BUCKET?: R2Bucket;
+    R2?: R2Bucket;
     CAMPUS_CODE?: string;
     ADMIN_PASSWORD?: string;
     TURNSTILE_SECRET_KEY?: string;
@@ -60,6 +61,12 @@ interface TagRow {
     unread_message_count?: number;
 }
 
+interface TurnstileVerifyResult {
+    ok: boolean;
+    errorCodes: string[];
+    hostname?: string;
+}
+
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_IMAGE_TYPES = new Set([
     "image/jpeg",
@@ -77,6 +84,10 @@ const BLOCKED_TERMS = [
     "gago ka",
     "ulol",
 ];
+
+function getMediaBucket(env: Env): R2Bucket | undefined {
+    return env.R2;
+}
 
 function jsonResponse(
     data: unknown,
@@ -97,8 +108,9 @@ function errorResponse(
     message: string,
     status = 400,
     code = "BAD_REQUEST",
+    extra?: Record<string, unknown>,
 ): Response {
-    return jsonResponse({ error: message, code }, status);
+    return jsonResponse({ error: message, code, ...extra }, status);
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -202,27 +214,92 @@ async function verifyTurnstile(
     secretKey: string | undefined,
     token: string | undefined,
     remoteIp: string,
-): Promise<boolean> {
-    if (!secretKey) return true; // Not configured in local dev
-    if (!token) return false;
-    if (token === "dev-bypass-token" && secretKey.startsWith("1x00000000")) {
-        return true;
-    }
-    const form = new URLSearchParams();
-    form.set("secret", secretKey);
-    form.set("response", token);
-    form.set("remoteip", remoteIp);
+): Promise<TurnstileVerifyResult> {
+    const cleanSecret = secretKey?.trim();
+    const cleanToken = token?.trim();
 
-    const res = await fetch(
-        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-        {
-            method: "POST",
-            body: form,
-        },
-    );
-    if (!res.ok) return false;
-    const outcome = (await res.json()) as { success?: boolean };
-    return Boolean(outcome.success);
+    if (!cleanSecret) {
+        console.warn(
+            "[Turnstile] TURNSTILE_SECRET_KEY is not set; allowing request in local dev mode.",
+        );
+        return { ok: true, errorCodes: [] };
+    }
+
+    if (!cleanToken) {
+        console.warn("[Turnstile] Missing token in request payload.");
+        return { ok: false, errorCodes: ["missing-input-response"] };
+    }
+
+    if (
+        cleanToken === "dev-bypass-token" &&
+        cleanSecret.startsWith("1x00000000")
+    ) {
+        return { ok: true, errorCodes: [] };
+    }
+
+    const form = new URLSearchParams();
+    form.set("secret", cleanSecret);
+    form.set("response", cleanToken);
+    if (remoteIp && remoteIp !== "127.0.0.1") {
+        form.set("remoteip", remoteIp);
+    }
+
+    try {
+        const res = await fetch(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            {
+                method: "POST",
+                body: form,
+            },
+        );
+
+        const outcome = (await res.json().catch(() => ({}))) as {
+            success?: boolean;
+            "error-codes"?: string[];
+            hostname?: string;
+        };
+
+        const errorCodes = Array.isArray(outcome["error-codes"])
+            ? outcome["error-codes"]
+            : !res.ok
+              ? [`http-${res.status}`]
+              : [];
+
+        if (!outcome.success) {
+            console.error("[Turnstile] siteverify failed:", {
+                status: res.status,
+                errorCodes,
+                hostname: outcome.hostname,
+                remoteIp,
+                tokenPrefix: cleanToken.slice(0, 12),
+            });
+            return {
+                ok: false,
+                errorCodes:
+                    errorCodes.length > 0
+                        ? errorCodes
+                        : ["verification-failed"],
+                hostname: outcome.hostname,
+            };
+        }
+
+        return { ok: true, errorCodes: [], hostname: outcome.hostname };
+    } catch (err) {
+        console.error("[Turnstile] Network or parse exception:", err);
+        return { ok: false, errorCodes: ["internal-error"] };
+    }
+}
+
+function extractTurnstileToken(body: unknown): string | undefined {
+    if (!body || typeof body !== "object") return undefined;
+    const record = body as Record<string, unknown>;
+    if (typeof record.turnstileToken === "string") {
+        return record.turnstileToken;
+    }
+    if (typeof record["cf-turnstile-response"] === "string") {
+        return record["cf-turnstile-response"];
+    }
+    return undefined;
 }
 
 async function getActiveCampusCode(env: Env): Promise<string | null> {
@@ -272,6 +349,18 @@ function safeParseJson<T>(raw: string | null | undefined, fallback: T): T {
     }
 }
 
+function resolveMediaUrl(key: string): string {
+    if (
+        key.startsWith("http://") ||
+        key.startsWith("https://") ||
+        key.startsWith("/") ||
+        key.startsWith("data:")
+    ) {
+        return key;
+    }
+    return `/api/media/${encodeURIComponent(key)}`;
+}
+
 function mapPostRow(row: PostRow): Post {
     const rawContact = safeParseJson<ContactConfig>(row.contact, {
         relayMode: true,
@@ -292,11 +381,7 @@ function mapPostRow(row: PostRow): Post {
         locationName: row.location_name ?? row.location_id,
         lat: row.lat,
         lng: row.lng,
-        imageUrls: imageKeys.map((k) =>
-            k.startsWith("http") || k.startsWith("/")
-                ? k
-                : `/api/media/${encodeURIComponent(k)}`,
-        ),
+        imageUrls: imageKeys.map(resolveMediaUrl),
         contact: {
             ...rawContact,
             // If post has a claim question on a found item, hide direct methods until claim verified
@@ -322,11 +407,7 @@ function mapTagRow(row: TagRow): Tag {
         publicCode: row.public_code,
         label: row.label,
         itemType: row.item_type,
-        photoUrl: row.photo_key
-            ? row.photo_key.startsWith("/")
-                ? row.photo_key
-                : `/api/media/${encodeURIComponent(row.photo_key)}`
-            : null,
+        photoUrl: row.photo_key ? resolveMediaUrl(row.photo_key) : null,
         contactConfig,
         relayMode: Boolean(row.relay_mode),
         lostMode: Boolean(row.lost_mode),
@@ -362,9 +443,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 lng: number;
                 description: string;
             }>();
-
             const requiredCode = await getActiveCampusCode(env);
-
             return jsonResponse({
                 locations: results.map((r) => ({
                     id: r.id,
@@ -437,7 +516,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     conditions.length > 0
                         ? `WHERE ${conditions.join(" AND ")}`
                         : "";
-
                 const sql = `
           SELECT p.*, l.name AS location_name
           FROM posts p
@@ -450,7 +528,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 const { results } = await env.DB.prepare(sql)
                     .bind(...binds)
                     .all<PostRow>();
-
                 const hasMore = results.length > limit;
                 const slice = hasMore ? results.slice(0, limit) : results;
                 const nextCursor =
@@ -507,16 +584,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
 
                 const body = (await request.json()) as CreatePostInput;
-                const turnstileOk = await verifyTurnstile(
+                const token = extractTurnstileToken(body);
+                const turnstile = await verifyTurnstile(
                     env.TURNSTILE_SECRET_KEY,
-                    body.turnstileToken,
+                    token,
                     clientIp,
                 );
-                if (!turnstileOk) {
+                if (!turnstile.ok) {
                     return errorResponse(
-                        "Human verification failed. Please retry.",
+                        `Human verification failed (${turnstile.errorCodes.join(", ")}). Please retry.`,
                         403,
                         "TURNSTILE_FAILED",
+                        { "error-codes": turnstile.errorCodes },
                     );
                 }
 
@@ -546,7 +625,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 const editKeyHash = await sha256Hex(editKey);
                 const nowIso = new Date().toISOString();
                 const occurredAt = body.occurredAt || nowIso;
-
                 const claimPrompt = body.claimQuestionPrompt?.trim() || null;
                 const claimAnswerHash =
                     claimPrompt && body.claimAnswer?.trim()
@@ -699,7 +777,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 )
                     .bind(nowIso, postId)
                     .run();
-
                 const updated = await env.DB.prepare(
                     `SELECT p.*, l.name AS location_name
            FROM posts p LEFT JOIN locations l ON l.id = p.location_id
@@ -707,7 +784,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 )
                     .bind(postId)
                     .first<PostRow>();
-
                 return jsonResponse({
                     post: updated ? mapPostRow(updated) : null,
                 });
@@ -751,7 +827,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 )
                     .bind(postId)
                     .first<PostRow>();
-
                 return jsonResponse({
                     post: updated ? mapPostRow(updated) : null,
                 });
@@ -768,7 +843,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         // 4. GET /api/tags & POST /api/tags
         if (segments[0] === "tags" && segments.length === 1) {
             if (method === "GET") {
-                // Expects comma-separated manage keys in X-Manage-Keys header
                 const rawKeysHeader =
                     request.headers.get("X-Manage-Keys") ?? "";
                 const rawKeys = rawKeysHeader
@@ -828,16 +902,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
 
                 const body = (await request.json()) as CreateTagInput;
-                const turnstileOk = await verifyTurnstile(
+                const token = extractTurnstileToken(body);
+                const turnstile = await verifyTurnstile(
                     env.TURNSTILE_SECRET_KEY,
-                    body.turnstileToken,
+                    token,
                     clientIp,
                 );
-                if (!turnstileOk) {
+                if (!turnstile.ok) {
                     return errorResponse(
-                        "Human verification failed. Please retry.",
+                        `Human verification failed (${turnstile.errorCodes.join(", ")}). Please retry.`,
                         403,
                         "TURNSTILE_FAILED",
+                        { "error-codes": turnstile.errorCodes },
                     );
                 }
 
@@ -883,7 +959,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 )
                     .bind(id)
                     .first<TagRow>();
-
                 if (!created) {
                     return errorResponse("Failed to create tag.", 500);
                 }
@@ -909,7 +984,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             )
                 .bind(tagId)
                 .first<TagRow>();
-
             if (!tagRow) {
                 return errorResponse("Tag not found.", 404, "NOT_FOUND");
             }
@@ -943,7 +1017,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                         read_at: string | null;
                     }>();
 
-                // Mark unread messages as read
                 await env.DB.prepare(
                     "UPDATE messages SET read_at = ?1 WHERE tag_id = ?2 AND read_at IS NULL",
                 )
@@ -1110,7 +1183,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             )
                 .bind(code)
                 .first<TagRow>();
-
             if (!tagRow) {
                 return errorResponse(
                     "Tag code not found.",
@@ -1128,7 +1200,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             );
 
             if (!action && method === "GET") {
-                // Log scan event unless ?preview=1 is passed
                 if (
                     url.searchParams.get("preview") !== "1" &&
                     !tagRow.revoked_at
@@ -1153,7 +1224,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     label: tagRow.label,
                     itemType: tagRow.item_type,
                     photoUrl: tagRow.photo_key
-                        ? `/api/media/${encodeURIComponent(tagRow.photo_key)}`
+                        ? resolveMediaUrl(tagRow.photo_key)
                         : null,
                     relayMode: Boolean(tagRow.relay_mode),
                     lostMode: Boolean(tagRow.lost_mode),
@@ -1162,7 +1233,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     visibleMethodsCount: visibleMethods.length,
                     isRevoked: Boolean(tagRow.revoked_at),
                 };
-
                 return jsonResponse({ tag: view });
             }
 
@@ -1173,19 +1243,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                         410,
                     );
                 }
-                const { turnstileToken } = (await request.json()) as {
+                const body = (await request.json()) as {
                     turnstileToken?: string;
+                    "cf-turnstile-response"?: string;
                 };
-                const turnstileOk = await verifyTurnstile(
+                const token = extractTurnstileToken(body);
+                const turnstile = await verifyTurnstile(
                     env.TURNSTILE_SECRET_KEY,
-                    turnstileToken,
+                    token,
                     clientIp,
                 );
-                if (!turnstileOk) {
+                if (!turnstile.ok) {
                     return errorResponse(
-                        "Please complete the verification check to reveal owner contact options.",
+                        `Please complete the human verification check to reveal owner contact options (${turnstile.errorCodes.join(", ")}).`,
                         403,
                         "TURNSTILE_FAILED",
+                        { "error-codes": turnstile.errorCodes },
                     );
                 }
 
@@ -1219,18 +1292,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     foundAtHub?: string;
                     approxLocation?: { lat: number; lng: number } | null;
                     turnstileToken?: string;
+                    "cf-turnstile-response"?: string;
                 };
 
-                const turnstileOk = await verifyTurnstile(
+                const token = extractTurnstileToken(payload);
+                const turnstile = await verifyTurnstile(
                     env.TURNSTILE_SECRET_KEY,
-                    payload.turnstileToken,
+                    token,
                     clientIp,
                 );
-                if (!turnstileOk) {
+                if (!turnstile.ok) {
                     return errorResponse(
-                        "Human verification failed.",
+                        `Human verification failed (${turnstile.errorCodes.join(", ")}). Please retry.`,
                         403,
                         "TURNSTILE_FAILED",
+                        { "error-codes": turnstile.errorCodes },
                     );
                 }
 
@@ -1344,54 +1420,95 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         // 8. R2 Image Upload & Media Serving: POST /api/upload & GET /api/media/:key
         if (segments[0] === "upload" && method === "POST") {
-            const allowed = await checkRateLimit(
-                env.DB,
-                `upload:${ipHash}`,
-                20,
-                3600,
-            );
-            if (!allowed) {
-                return errorResponse("Upload rate limit exceeded.", 429);
-            }
-
-            const formData = await request.formData();
-            const file = formData.get("file");
-            if (!file || typeof file === "string") {
-                return errorResponse("Missing image file in form data.");
-            }
-
-            const blob = file as File;
-            if (!ALLOWED_IMAGE_TYPES.has(blob.type)) {
-                return errorResponse(
-                    "Only JPEG, PNG, WebP, or GIF images are allowed.",
+            try {
+                const allowed = await checkRateLimit(
+                    env.DB,
+                    `upload:${ipHash}`,
+                    20,
+                    3600,
                 );
-            }
-            if (blob.size > MAX_UPLOAD_BYTES) {
-                return errorResponse("Image must be 5MB or smaller.");
-            }
+                if (!allowed) {
+                    return errorResponse(
+                        "Upload rate limit exceeded.",
+                        429,
+                        "RATE_LIMITED",
+                    );
+                }
 
-            const ext = blob.type.split("/")[1] || "jpg";
-            const objectKey = `items/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID()}.${ext}`;
+                const bucket = getMediaBucket(env);
+                if (!bucket) {
+                    console.error(
+                        "[/api/upload] Neither env.R2 is bound in this Pages environment.",
+                    );
+                    return errorResponse(
+                        "R2 media bucket binding (BUCKET or R2) is not configured in Cloudflare Pages.",
+                        503,
+                        "R2_MISSING",
+                    );
+                }
 
-            if (!env.BUCKET) {
-                return errorResponse(
-                    "R2 BUCKET binding is not configured.",
-                    500,
-                    "R2_MISSING",
+                let formData: FormData;
+                try {
+                    formData = await request.formData();
+                } catch (parseErr) {
+                    console.error(
+                        "[/api/upload] Failed to parse multipart formData:",
+                        parseErr,
+                    );
+                    return errorResponse(
+                        "Invalid multipart/form-data upload payload.",
+                        400,
+                        "INVALID_FORM_DATA",
+                    );
+                }
+
+                const file = formData.get("file");
+                if (!file || typeof file === "string") {
+                    return errorResponse(
+                        "Missing image file in form data field 'file'.",
+                        400,
+                        "MISSING_FILE",
+                    );
+                }
+
+                const blob = file as File;
+                if (!ALLOWED_IMAGE_TYPES.has(blob.type)) {
+                    return errorResponse(
+                        `Unsupported image type '${blob.type}'. Only JPEG, PNG, WebP, or GIF images are allowed.`,
+                        400,
+                        "UNSUPPORTED_MEDIA_TYPE",
+                    );
+                }
+                if (blob.size > MAX_UPLOAD_BYTES) {
+                    return errorResponse(
+                        "Image must be 5MB or smaller.",
+                        413,
+                        "FILE_TOO_LARGE",
+                    );
+                }
+
+                const ext = blob.type.split("/")[1] || "jpg";
+                const objectKey = `items/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID()}.${ext}`;
+
+                await bucket.put(objectKey, await blob.arrayBuffer(), {
+                    httpMetadata: { contentType: blob.type },
+                });
+
+                return jsonResponse(
+                    {
+                        key: objectKey,
+                        url: `/api/media/${encodeURIComponent(objectKey)}`,
+                    },
+                    201,
                 );
+            } catch (uploadErr) {
+                console.error("[/api/upload] Unhandled exception:", uploadErr);
+                const msg =
+                    uploadErr instanceof Error
+                        ? uploadErr.message
+                        : "Image upload failed";
+                return errorResponse(msg, 500, "UPLOAD_FAILED");
             }
-
-            await env.BUCKET.put(objectKey, await blob.arrayBuffer(), {
-                httpMetadata: { contentType: blob.type },
-            });
-
-            return jsonResponse(
-                {
-                    key: objectKey,
-                    url: `/api/media/${encodeURIComponent(objectKey)}`,
-                },
-                201,
-            );
         }
 
         if (
@@ -1399,11 +1516,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             segments.length >= 2 &&
             method === "GET"
         ) {
-            if (!env.BUCKET) {
-                return errorResponse("R2 BUCKET not bound", 404);
+            const bucket = getMediaBucket(env);
+            if (!bucket) {
+                return errorResponse("R2 media bucket not bound", 404);
             }
             const key = decodeURIComponent(segments.slice(1).join("/"));
-            const object = await env.BUCKET.get(key);
+            const object = await bucket.get(key);
             if (!object) {
                 return errorResponse("Image not found", 404);
             }
@@ -1435,7 +1553,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             ) {
                 return errorResponse("Invalid report payload.");
             }
-
             await env.DB.prepare(
                 `INSERT INTO reports (id, target_type, target_id, reason, details, reporter_ip_hash, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
@@ -1450,7 +1567,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     new Date().toISOString(),
                 )
                 .run();
-
             return jsonResponse({ reported: true }, 201);
         }
 
@@ -1482,11 +1598,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 };
                 const inputHash = await sha256Hex(password ?? "");
                 const targetHash = await sha256Hex(env.ADMIN_PASSWORD);
-
                 if (!constantTimeEqualHex(inputHash, targetHash)) {
                     return errorResponse("Invalid admin password.", 401);
                 }
-
                 const sessionToken = await sha256Hex(
                     `admin-session:${env.ADMIN_PASSWORD}`,
                 );
@@ -1576,6 +1690,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         return errorResponse("API route not found.", 404, "ROUTE_NOT_FOUND");
     } catch (err) {
+        console.error("[API Unhandled Error]:", err);
         const message =
             err instanceof Error ? err.message : "Internal server error";
         return errorResponse(message, 500, "INTERNAL_ERROR");
