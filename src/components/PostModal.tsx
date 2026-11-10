@@ -668,28 +668,11 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                 )}
                                         </div>
 
-                                        <Textarea
-                                            id="post-description"
-                                            label="Description & Distinguishing Marks *"
-                                            rows={3}
-                                            required
-                                            maxLength={1500}
-                                            value={description}
-                                            onChange={(e) =>
-                                                setDescription(e.target.value)
-                                            }
-                                            placeholder={
-                                                type === "lost"
-                                                    ? "Mention stickers, color, brand, or where you last had it..."
-                                                    : "Describe the item generally (keep 1 detail secret if you want to use Claim Verification in Step 3)."
-                                            }
-                                        />
-
                                         <div>
                                             <div className="mb-1.5 flex items-center justify-between text-xs">
                                                 <span className="font-semibold text-text">
-                                                    Photos (Optional, max 3
-                                                    &middot; auto-compressed)
+                                                    Photos (Optional, Max 3
+                                                    Photos)
                                                 </span>
                                                 <span className="text-muted">
                                                     {imagePreviews.length}/3
