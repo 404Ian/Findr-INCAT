@@ -583,7 +583,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                            <div className="sm:col-span-2">
+                                            <div className="sm:col-span-2 space-y-1">
                                                 <Input
                                                     id="post-title"
                                                     label="Item Title *"
@@ -599,6 +599,19 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                             : "e.g., Casio fx-991EX Calculator found at ICT Lab"
                                                     }
                                                 />
+                                                {title.length > 0 &&
+                                                    title.trim().length < 3 && (
+                                                        <p className="text-[11px] font-medium text-danger pl-0.5">
+                                                            At least 3
+                                                            characters required
+                                                            (
+                                                            {
+                                                                title.trim()
+                                                                    .length
+                                                            }
+                                                            /3)
+                                                        </p>
+                                                    )}
                                             </div>
                                             <Select
                                                 id="post-category"
@@ -620,6 +633,39 @@ export const PostModal: React.FC<PostModalProps> = ({
                                                     </option>
                                                 ))}
                                             </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Textarea
+                                                id="post-description"
+                                                label="Description & Distinguishing Marks *"
+                                                rows={3}
+                                                required
+                                                maxLength={1500}
+                                                value={description}
+                                                onChange={(e) =>
+                                                    setDescription(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                placeholder={
+                                                    type === "lost"
+                                                        ? "Mention stickers, color, brand, or where you last had it..."
+                                                        : "Describe the item generally (keep 1 detail secret if you want to use Claim Verification in Step 3)."
+                                                }
+                                            />
+                                            {description.length > 0 &&
+                                                description.trim().length <
+                                                    5 && (
+                                                    <p className="text-[11px] font-medium text-danger pl-0.5">
+                                                        At least 5 characters
+                                                        required (
+                                                        {
+                                                            description.trim()
+                                                                .length
+                                                        }
+                                                        /5)
+                                                    </p>
+                                                )}
                                         </div>
 
                                         <Textarea

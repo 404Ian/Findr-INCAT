@@ -631,13 +631,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                         ? await sha256Hex(body.claimAnswer.trim().toLowerCase())
                         : null;
 
+                // Ensure location_id exists in locations table to satisfy foreign key constraint
+                let resolvedLocationId = body.locationId || "loc-guard-house";
+                const locCheck = await env.DB.prepare(
+                    "SELECT id FROM locations WHERE id = ?1",
+                )
+                    .bind(resolvedLocationId)
+                    .first();
+                if (!locCheck) {
+                    resolvedLocationId = "loc-guard-house";
+                }
+
                 await env.DB.prepare(
                     `INSERT INTO posts (
-            id, type, title, description, category, location_id, lat, lng,
-            image_keys, contact, status, linked_tag_code,
-            claim_question_prompt, claim_answer_hash, edit_key_hash,
-            occurred_at, created_at
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'open', ?11, ?12, ?13, ?14, ?15, ?16)`,
+             id, type, title, description, category, location_id, lat, lng,
+             image_keys, contact, status, linked_tag_code,
+             claim_question_prompt, claim_answer_hash, edit_key_hash,
+             occurred_at, created_at
+           ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'open', ?11, ?12, ?13, ?14, ?15, ?16)`,
                 )
                     .bind(
                         id,
@@ -645,7 +656,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                         title,
                         description,
                         body.category || "other",
-                        body.locationId || "loc-guard-house",
+                        resolvedLocationId,
                         Number(body.lat || 18.20389),
                         Number(body.lng || 120.59268),
                         JSON.stringify((body.imageKeys ?? []).slice(0, 4)),
