@@ -149,12 +149,53 @@
 }
 
 @layer base {
+    :root {
+        color-scheme: light;
+    }
+
+    .dark,
+    [data-theme="dark"] {
+        color-scheme: dark;
+    }
+
     html {
         font-family: var(--font-sans);
         background-color: var(--bg);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        scrollbar-width: thin;
+        scrollbar-color: #3e433e #161816;
+    }
+
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #3e433e transparent;
+    }
+
+    /* Slim Dark WebKit Scrollbars */
+    *::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    *::-webkit-scrollbar-track {
+        background: rgba(18, 19, 18, 0.35);
+        border-radius: 9999px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        background: #3e433e;
+        border-radius: 9999px;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+        background: #575e57;
+    }
+
+    select option {
+        background-color: var(--surface);
+        color: var(--text);
     }
 
     body {

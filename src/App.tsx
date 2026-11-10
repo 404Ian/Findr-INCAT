@@ -131,14 +131,49 @@ function CountUpStat({ value }: { value: number }) {
     return <span>{display}</span>;
 }
 
+type AppTab = "wall" | "my-items" | "scan";
+
+function getTabFromPathname(pathname: string): AppTab {
+    if (pathname === "/items" || pathname.startsWith("/items/"))
+        return "my-items";
+    if (pathname === "/scan" || pathname.startsWith("/scan/")) return "scan";
+    return "wall";
+}
+
+function getPathForTab(tab: AppTab): string {
+    if (tab === "my-items") return "/items";
+    if (tab === "scan") return "/scan";
+    return "/";
+}
+
 function FindrShell() {
     const { publicTagCode, restoredNotice, clearPublicTag } =
         useDeepLinkRoute();
     const { theme, toggleTheme, lang, setLang, t } = useThemeAndI18n();
-
-    const [activeTab, setActiveTab] = useState<"wall" | "my-items" | "scan">(
-        "wall",
+    const [activeTab, setActiveTabState] = useState<AppTab>(() =>
+        typeof window !== "undefined"
+            ? getTabFromPathname(window.location.pathname)
+            : "wall",
     );
+
+    const setActiveTab = useCallback((nextTab: AppTab) => {
+        setActiveTabState(nextTab);
+        if (typeof window !== "undefined") {
+            const targetPath = getPathForTab(nextTab);
+            if (window.location.pathname !== targetPath) {
+                window.history.pushState({}, "", targetPath);
+            }
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+    }, []);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            setActiveTabState(getTabFromPathname(window.location.pathname));
+        };
+        window.addEventListener("popstate", handlePopState);
+        return () => window.removeEventListener("popstate", handlePopState);
+    }, []);
     const [scrolled, setScrolled] = useState(false);
 
     // Wall Data & Pagination State
@@ -407,9 +442,24 @@ function FindrShell() {
                                 }
                                 className="bg-transparent text-xs font-semibold text-text focus:outline-none cursor-pointer"
                             >
-                                <option value="en">EN</option>
-                                <option value="tl">TL</option>
-                                <option value="ilo">ILO</option>
+                                <option
+                                    value="en"
+                                    className="bg-surface text-text"
+                                >
+                                    EN
+                                </option>
+                                <option
+                                    value="tl"
+                                    className="bg-surface text-text"
+                                >
+                                    TL
+                                </option>
+                                <option
+                                    value="ilo"
+                                    className="bg-surface text-text"
+                                >
+                                    ILO
+                                </option>
                             </select>
                         </div>
 
@@ -448,7 +498,7 @@ function FindrShell() {
 
             {/* Main Content Container */}
             <main className="mx-auto max-w-7xl px-4 pt-5 sm:px-6 sm:pt-7">
-                <AnimatePresence mode="wait">
+                <AnimatePresence initial={false}>
                     {/* TAB 1: CAMPUS WALL */}
                     {activeTab === "wall" && (
                         <motion.div
@@ -1137,7 +1187,6 @@ function FindrShell() {
                 isOpen={postModalOpen}
                 onClose={() => setPostModalOpen(false)}
                 onCreated={() => {
-                    setPostModalOpen(false);
                     void fetchWallPosts();
                 }}
             />

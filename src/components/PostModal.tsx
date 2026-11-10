@@ -423,7 +423,7 @@ export const PostModal: React.FC<PostModalProps> = ({
         <AnimatePresence>
             {modalOpen && (
                 <div
-                    className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+                    className="fixed inset-0 z-9999 flex items-end justify-center sm:items-center sm:p-4"
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="post-modal-title"

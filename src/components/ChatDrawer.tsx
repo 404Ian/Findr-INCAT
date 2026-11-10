@@ -146,7 +146,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             <AnimatePresence>
                 {isOpen && post && (
                     <div
-                        className="fixed inset-0 z-50 flex items-end justify-end sm:items-stretch"
+                        className="fixed inset-0 z-9990 flex items-end justify-end sm:items-stretch"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="post-detail-title"

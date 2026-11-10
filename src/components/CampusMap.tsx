@@ -637,14 +637,14 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 
     return (
         <div
-            className={`theme-surface overflow-hidden rounded-2xl border border-border bg-surface shadow-md ${
+            className={`theme-surface relative z-0 isolate overflow-hidden rounded-2xl border border-border bg-surface shadow-md ${
                 theme === "dark" ? "incat-osm-dark-raster" : ""
             } ${className}`}
         >
             {/* Relative Map Wrapper with Explicit Height */}
             <div
                 ref={mapWrapperRef}
-                className={`relative w-full ${heightClassName}`}
+                className={`relative z-0 isolate w-full ${heightClassName}`}
             >
                 {/* Leaflet Map Canvas */}
                 <div
